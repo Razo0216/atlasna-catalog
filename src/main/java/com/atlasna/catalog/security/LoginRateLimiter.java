@@ -11,6 +11,9 @@ import java.time.Clock;
  * - per client IP: caps total attempts, which stops one client spraying many accounts.
  * Client IP is the servlet remote address; behind a reverse proxy, configure
  * server.forward-headers-strategy so it reflects the real client, not the proxy.
+ *
+ * <p>Called by AuthService in this order: {@link #checkAndRecordAttempt} before the password is checked,
+ * then {@link #recordFailure} or {@link #recordSuccess} depending on the result.
  */
 @Component
 public class LoginRateLimiter {
@@ -35,10 +38,12 @@ public class LoginRateLimiter {
         attemptsByIp.record(clientIp);
     }
 
+    /** Counts a wrong password (or unknown email) against the account. */
     public void recordFailure(String email) {
         failuresByEmail.record(email);
     }
 
+    /** A successful login clears the account's failure count. */
     public void recordSuccess(String email) {
         failuresByEmail.reset(email);
     }

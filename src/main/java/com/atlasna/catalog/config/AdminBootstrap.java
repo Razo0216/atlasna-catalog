@@ -15,9 +15,14 @@ import org.springframework.stereotype.Component;
 /**
  * Creates the first admin account in any environment from atlasna.bootstrap.admin.* properties.
  * Never modifies an existing account, and refuses to start with a weak password.
+ *
+ * <p>Runs once at every startup (ApplicationRunner), after Flyway has migrated the schema. It is
+ * idempotent: once the account exists, later startups do nothing, so the variables can stay set.
+ * Typical production use: set ATLASNA_BOOTSTRAP_ADMIN_EMAIL and ATLASNA_BOOTSTRAP_ADMIN_PASSWORD for the first
+ * deploy. In dev, application-dev.yml supplies admin@atlasna.dz.
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE) // run before other startup runners (e.g. DataSeeder)
 @RequiredArgsConstructor
 @Slf4j
 public class AdminBootstrap implements ApplicationRunner {
@@ -47,6 +52,8 @@ public class AdminBootstrap implements ApplicationRunner {
         String email = User.normalizeEmail(properties.email());
         userRepository.findByEmail(email).ifPresentOrElse(
                 existing -> {
+                    // Deliberately never promote an existing account: a customer who registered with
+                    // this email first must not silently become an admin.
                     if (existing.getRole() != Role.ADMIN) {
                         log.warn("Bootstrap admin email {} belongs to an existing {} account; not changing it",
                                 email, existing.getRole());

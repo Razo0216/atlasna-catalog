@@ -1,3 +1,6 @@
+# Local development database only. Start: docker compose up -d   Stop: docker compose down
+# Wipe all dev data: docker compose down -v (Flyway rebuilds the schema on next app start).
+# Credentials here match application-dev.yml and are not used in any real environment.
 services:
   postgres:
     image: postgres:16-alpine
@@ -10,8 +13,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - atlasna_pgdata:/var/lib/postgresql/data
-    healthcheck:
+      - atlasna_pgdata:/var/lib/postgresql/data   # named volume: data survives container restarts
+    healthcheck:   # reports "healthy" once Postgres accepts connections
       test: ["CMD-SHELL", "pg_isready -U atlasna -d atlasna"]
       interval: 5s
       timeout: 5s

@@ -9,6 +9,7 @@ import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/** Unit tests for {@link FixedWindowRateLimiter}, using a controllable clock so time can be advanced instantly. */
 class FixedWindowRateLimiterTest {
 
     private final MutableClock clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));

@@ -7,6 +7,10 @@ import org.springframework.context.annotation.Configuration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Verifies that startup fails fast without a usable JWT secret. {@code ApplicationContextRunner} starts
+ * only the properties binding, so each case runs in milliseconds.
+ */
 class JwtPropertiesValidationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()

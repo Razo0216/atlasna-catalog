@@ -9,6 +9,9 @@ import org.springframework.validation.annotation.Validated;
 /**
  * Validated at startup: the app refuses to boot without a real signing secret.
  * Outside the dev profile the secret must come from the ATLASNA_JWT_SECRET environment variable.
+ *
+ * @param secret            HMAC signing key; anyone who knows it can forge tokens, so keep it out of git
+ * @param expirationMinutes access-token lifetime ({@code atlasna.jwt.expiration-minutes})
  */
 @ConfigurationProperties(prefix = "atlasna.jwt")
 @Validated

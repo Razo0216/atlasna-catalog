@@ -38,6 +38,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+/**
+ * End-to-end tests of the HTTP API: the full Spring context (security filters, controllers, services,
+ * Flyway-built H2 database) driven through MockMvc, with no real server or Postgres needed.
+ *
+ * <p>Each test starts from a clean state: all users and products are deleted, one ADMIN is created,
+ * and the login rate limiter is cleared. Covers registration, login, 401 vs 403 rules, product CRUD,
+ * soft delete, bad or expired tokens, email case handling, error mapping, page format and rate limits.
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

@@ -15,6 +15,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * Unit tests for {@link AuthService} with mocked collaborators (no Spring context), used for
+ * scenarios that are hard to trigger for real, like two registrations racing on the same email.
+ */
 class AuthServiceTest {
 
     private final UserRepository userRepository = mock(UserRepository.class);

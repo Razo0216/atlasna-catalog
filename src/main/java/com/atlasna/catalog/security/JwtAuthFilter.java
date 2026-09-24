@@ -18,6 +18,15 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+/**
+ * Authenticates requests that carry a JWT. Registered in SecurityConfig before Spring's
+ * username/password filter, and runs once per request.
+ *
+ * <p>With a valid {@code Authorization: Bearer <token>} header, it loads the user and stores them in
+ * the {@link SecurityContextHolder}; the authorization rules and {@code @PreAuthorize} checks read
+ * the user and their role from there. Without a header, or with an unusable token, the request simply
+ * continues unauthenticated. This filter never rejects a request itself: it only establishes identity.
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -52,6 +61,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    /**
+     * Verifies the token and marks the request as authenticated.
+     *
+     * <p>The user is reloaded from the database on every request rather than trusted from the token,
+     * so a deleted user or a changed role takes effect immediately, even while an old token is unexpired.
+     */
     private void authenticate(String token, HttpServletRequest request) {
         String userEmail = jwtService.extractUsername(token);
         boolean notAlreadyAuthenticated = SecurityContextHolder.getContext().getAuthentication() == null;
@@ -59,6 +74,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (userEmail != null && notAlreadyAuthenticated) {
             UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
             if (jwtService.isTokenValid(token, userDetails)) {
+                // Credentials are null: the token has already been verified, and the password isn't needed again.
                 var authToken = new UsernamePasswordAuthenticationToken(
                         userDetails, null, userDetails.getAuthorities());
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

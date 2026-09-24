@@ -17,6 +17,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/** Unit tests for {@link AdminBootstrap}: creating the first admin, and the cases where it must refuse or do nothing. */
 class AdminBootstrapTest {
 
     private final UserRepository userRepository = mock(UserRepository.class);

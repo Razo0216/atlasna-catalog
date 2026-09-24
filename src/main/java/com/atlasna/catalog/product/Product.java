@@ -10,7 +10,13 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-/** Single-store model: no sellerId. Add it later if multi-vendor ever happens — nothing else here changes. */
+/**
+ * A catalog product (table {@code products}, created by Flyway migration V1).
+ *
+ * <p>Single-store model: no sellerId. Add it later if multi-vendor ever happens — nothing else here changes.
+ * Products are never physically deleted: {@code active = false} hides them from public reads while keeping
+ * the row for future order history.
+ */
 @Entity
 @Table(name = "products")
 @Getter
@@ -30,6 +36,7 @@ public class Product {
     @Column(length = 2000)
     private String description;
 
+    /** BigDecimal, never double: money needs exact decimal arithmetic. Up to 12 digits, 2 after the point. */
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal price;
 
@@ -41,6 +48,7 @@ public class Product {
     @Builder.Default
     private Integer stockQuantity = 0;
 
+    /** Soft-delete flag: false means deleted (hidden from public endpoints). */
     @Column(nullable = false)
     @Builder.Default
     private boolean active = true;
@@ -50,12 +58,14 @@ public class Product {
 
     private Instant updatedAt;
 
+    /** JPA lifecycle hook: runs just before the first INSERT. */
     @PrePersist
     void onCreate() {
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
 
+    /** JPA lifecycle hook: runs just before each UPDATE. */
     @PreUpdate
     void onUpdate() {
         this.updatedAt = Instant.now();

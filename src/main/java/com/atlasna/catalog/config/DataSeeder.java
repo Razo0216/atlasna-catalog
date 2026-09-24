@@ -30,6 +30,7 @@ public class DataSeeder implements CommandLineRunner {
         seedProducts();
     }
 
+    /** Only seeds an empty table, so restarting the app never creates duplicates. */
     private void seedProducts() {
         if (productRepository.count() > 0) return;
         productRepository.saveAll(List.of(

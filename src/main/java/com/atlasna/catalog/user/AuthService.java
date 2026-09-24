@@ -17,6 +17,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Registration and login business logic.
+ *
+ * <p>Both flows end by issuing a JWT for the user. Emails are normalized first (trim + lowercase)
+ * so "Jane@Example.com" and "jane@example.com" are the same account.
+ */
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -27,9 +33,16 @@ public class AuthService {
     private final JwtService jwtService;
     private final LoginRateLimiter loginRateLimiter;
 
+    /**
+     * Creates a new CUSTOMER account (there is no way to self-register as ADMIN) and returns a token,
+     * so the user is logged in right away.
+     *
+     * @throws EmailAlreadyInUseException if the email is already registered (409)
+     */
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         String email = User.normalizeEmail(request.email());
+        // Fast path for the common case; the unique constraint below handles the race.
         if (userRepository.existsByEmail(email)) {
             throw new EmailAlreadyInUseException(email);
         }
@@ -50,6 +63,18 @@ public class AuthService {
         return buildAuthResponse(user);
     }
 
+    /**
+     * Verifies email + password and returns a token.
+     *
+     * <p>Order matters: the rate limiter is checked <em>before</em> the password, so a locked account
+     * is refused even with the correct password (guessing gains nothing). Password checking is
+     * delegated to Spring Security's AuthenticationManager (DaoAuthenticationProvider + BCrypt),
+     * which also reports unknown emails as bad credentials.
+     *
+     * @param clientIp the caller's address, used for per-IP rate limiting
+     * @throws com.atlasna.catalog.common.exception.TooManyRequestsException when rate-limited (429)
+     * @throws InvalidCredentialsException for an unknown email or wrong password (401)
+     */
     public AuthResponse login(LoginRequest request, String clientIp) {
         String email = User.normalizeEmail(request.email());
         loginRateLimiter.checkAndRecordAttempt(email, clientIp);
