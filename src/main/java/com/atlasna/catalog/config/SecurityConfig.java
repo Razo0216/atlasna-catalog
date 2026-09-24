@@ -35,6 +35,9 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                // CSRF protection is off because this API is stateless and authenticates only via the
+                // Authorization: Bearer header, which browsers never attach automatically. If auth ever
+                // moves to cookies (session or JWT-in-cookie), CSRF protection must be re-enabled.
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
