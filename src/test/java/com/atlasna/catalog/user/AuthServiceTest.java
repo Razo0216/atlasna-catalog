@@ -2,6 +2,7 @@ package com.atlasna.catalog.user;
 
 import com.atlasna.catalog.common.exception.EmailAlreadyInUseException;
 import com.atlasna.catalog.security.JwtService;
+import com.atlasna.catalog.security.LoginRateLimiter;
 import com.atlasna.catalog.user.dto.RegisterRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -20,7 +21,7 @@ class AuthServiceTest {
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final JwtService jwtService = mock(JwtService.class);
     private final AuthService authService = new AuthService(
-            userRepository, passwordEncoder, mock(AuthenticationManager.class), jwtService);
+            userRepository, passwordEncoder, mock(AuthenticationManager.class), jwtService, mock(LoginRateLimiter.class));
 
     @Test
     void concurrentDuplicateRegistrationIsReportedAsEmailInUse() {

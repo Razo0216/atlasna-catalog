@@ -3,6 +3,7 @@ package com.atlasna.catalog.user;
 import com.atlasna.catalog.common.exception.EmailAlreadyInUseException;
 import com.atlasna.catalog.common.exception.InvalidCredentialsException;
 import com.atlasna.catalog.security.JwtService;
+import com.atlasna.catalog.security.LoginRateLimiter;
 import com.atlasna.catalog.user.dto.AuthResponse;
 import com.atlasna.catalog.user.dto.LoginRequest;
 import com.atlasna.catalog.user.dto.RegisterRequest;
@@ -24,6 +25,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final LoginRateLimiter loginRateLimiter;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -48,14 +50,17 @@ public class AuthService {
         return buildAuthResponse(user);
     }
 
-    public AuthResponse login(LoginRequest request) {
+    public AuthResponse login(LoginRequest request, String clientIp) {
         String email = User.normalizeEmail(request.email());
+        loginRateLimiter.checkAndRecordAttempt(email, clientIp);
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(email, request.password()));
         } catch (BadCredentialsException e) {
+            loginRateLimiter.recordFailure(email);
             throw new InvalidCredentialsException();
         }
+        loginRateLimiter.recordSuccess(email);
         User user = userRepository.findByEmail(email)
                 .orElseThrow(InvalidCredentialsException::new);
         return buildAuthResponse(user);

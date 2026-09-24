@@ -4,6 +4,7 @@ import com.atlasna.catalog.config.DataSeeder;
 import com.atlasna.catalog.product.Category;
 import com.atlasna.catalog.product.Product;
 import com.atlasna.catalog.product.ProductRepository;
+import com.atlasna.catalog.security.LoginRateLimiter;
 import com.atlasna.catalog.user.Role;
 import com.atlasna.catalog.user.User;
 import com.atlasna.catalog.user.UserRepository;
@@ -33,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -51,10 +53,12 @@ class ApiIntegrationTests {
     @Autowired ProductRepository productRepository;
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired ApplicationContext applicationContext;
+    @Autowired LoginRateLimiter loginRateLimiter;
     @Value("${atlasna.jwt.secret}") String jwtSecret;
 
     @BeforeEach
     void resetData() {
+        loginRateLimiter.clear();
         productRepository.deleteAll();
         userRepository.deleteAll();
         userRepository.save(User.builder()
@@ -255,6 +259,65 @@ class ApiIntegrationTests {
     @Test
     void devSeederDoesNotRunOutsideDevProfile() {
         assertThat(applicationContext.getBeansOfType(DataSeeder.class)).isEmpty();
+    }
+
+    @Test
+    void repeatedFailedLoginsLockTheAccountTemporarily() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            loginFrom("10.0.0.1", ADMIN_EMAIL, "wrong-password").andExpect(status().isUnauthorized());
+        }
+
+        // Even the correct password is refused while locked, so guessing gains nothing.
+        loginFrom("10.0.0.1", ADMIN_EMAIL, ADMIN_PASSWORD)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().exists("Retry-After"))
+                .andExpect(jsonPath("$.status").value(429));
+        // The lock follows the account, not the client address.
+        loginFrom("10.0.0.2", ADMIN_EMAIL.toUpperCase(), ADMIN_PASSWORD)
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void failedLoginsOnOneAccountDoNotLockOthers() throws Exception {
+        register("Jane", "jane@example.com", "SuperSecret1").andExpect(status().isCreated());
+        for (int i = 0; i < 5; i++) {
+            loginFrom("10.0.0.1", ADMIN_EMAIL, "wrong-password");
+        }
+
+        loginFrom("10.0.0.1", "jane@example.com", "SuperSecret1").andExpect(status().isOk());
+    }
+
+    @Test
+    void successfulLoginResetsTheFailureCount() throws Exception {
+        for (int i = 0; i < 4; i++) {
+            loginFrom("10.0.0.1", ADMIN_EMAIL, "wrong-password").andExpect(status().isUnauthorized());
+        }
+        loginFrom("10.0.0.1", ADMIN_EMAIL, ADMIN_PASSWORD).andExpect(status().isOk());
+
+        for (int i = 0; i < 4; i++) {
+            loginFrom("10.0.0.1", ADMIN_EMAIL, "wrong-password").andExpect(status().isUnauthorized());
+        }
+        loginFrom("10.0.0.1", ADMIN_EMAIL, ADMIN_PASSWORD).andExpect(status().isOk());
+    }
+
+    @Test
+    void tooManyAttemptsFromOneAddressAreThrottled() throws Exception {
+        for (int i = 0; i < 20; i++) {
+            loginFrom("10.0.0.9", "user" + i + "@example.com", "whatever-password")
+                    .andExpect(status().isUnauthorized());
+        }
+
+        loginFrom("10.0.0.9", ADMIN_EMAIL, ADMIN_PASSWORD).andExpect(status().isTooManyRequests());
+        loginFrom("10.0.0.10", ADMIN_EMAIL, ADMIN_PASSWORD).andExpect(status().isOk());
+    }
+
+    private ResultActions loginFrom(String ip, String email, String password) throws Exception {
+        return mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .with(request -> {
+                    request.setRemoteAddr(ip);
+                    return request;
+                })
+                .content("{\"email\":\"%s\",\"password\":\"%s\"}".formatted(email, password)));
     }
 
     private ResultActions register(String fullName, String email, String password) throws Exception {
