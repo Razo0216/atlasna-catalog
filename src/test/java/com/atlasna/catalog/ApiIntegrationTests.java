@@ -146,12 +146,21 @@ class ApiIntegrationTests {
     }
 
     @Test
+    void missingTokenOnProtectedEndpointIsUnauthorizedWithJsonBody() throws Exception {
+        mockMvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value("Authentication is required to access this resource"));
+        assertThat(productRepository.count()).isZero();
+    }
+
+    @Test
     void malformedTokenDoesNotBreakPublicEndpoints() throws Exception {
         mockMvc.perform(get("/api/products").header("Authorization", "Bearer not.a.jwt"))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/products").header("Authorization", "Bearer not.a.jwt")
                         .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
-                .andExpect(status().is4xxClientError());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -168,7 +177,7 @@ class ApiIntegrationTests {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/products").header("Authorization", "Bearer " + expired)
                         .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
-                .andExpect(status().is4xxClientError());
+                .andExpect(status().isUnauthorized());
         assertThat(productRepository.count()).isZero();
     }
 

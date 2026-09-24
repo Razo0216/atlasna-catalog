@@ -2,6 +2,7 @@ package com.atlasna.catalog.config;
 
 import com.atlasna.catalog.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -20,6 +21,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.servlet.HandlerExceptionResolver;
 
 import java.util.List;
 
@@ -33,7 +35,10 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver exceptionResolver
+    ) throws Exception {
         http
                 // CSRF protection is off because this API is stateless and authenticates only via the
                 // Authorization: Bearer header, which browsers never attach automatically. If auth ever
@@ -47,6 +52,10 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
+                // Unauthenticated access to a protected endpoint -> 401 with the same ApiError
+                // body as every other error, via GlobalExceptionHandler.
+                .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) ->
+                        exceptionResolver.resolveException(request, response, null, authException)))
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
