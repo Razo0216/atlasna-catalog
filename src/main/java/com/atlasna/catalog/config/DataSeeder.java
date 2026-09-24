@@ -3,24 +3,19 @@ package com.atlasna.catalog.config;
 import com.atlasna.catalog.product.Category;
 import com.atlasna.catalog.product.Product;
 import com.atlasna.catalog.product.ProductRepository;
-import com.atlasna.catalog.user.Role;
-import com.atlasna.catalog.user.User;
-import com.atlasna.catalog.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Local-development seed data only. Active under the "dev" profile, which
+ * Local-development demo products only. Active under the "dev" profile, which
  * `./mvnw spring-boot:run` enables via the spring-boot-maven-plugin config in pom.xml.
- * A packaged jar never runs this unless "dev" is explicitly activated, so the
- * well-known admin password below can never reach a real environment by default.
+ * The dev admin account is created by AdminBootstrap from application-dev.yml.
  */
 @Component
 @Profile("dev")
@@ -28,25 +23,11 @@ import java.util.List;
 @Slf4j
 public class DataSeeder implements CommandLineRunner {
 
-    private final UserRepository userRepository;
     private final ProductRepository productRepository;
-    private final PasswordEncoder passwordEncoder;
 
     @Override
     public void run(String... args) {
-        seedAdmin();
         seedProducts();
-    }
-
-    private void seedAdmin() {
-        String adminEmail = "admin@atlasna.dz";
-        if (userRepository.existsByEmail(adminEmail)) return;
-        User admin = User.builder()
-                .fullName("Atlasna Admin").email(adminEmail)
-                .passwordHash(passwordEncoder.encode("ChangeMe123!"))
-                .role(Role.ADMIN).build();
-        userRepository.save(admin);
-        log.info("Seeded admin -> {} / ChangeMe123! (change outside dev)", adminEmail);
     }
 
     private void seedProducts() {
