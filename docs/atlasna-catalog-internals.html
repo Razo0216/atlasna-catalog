@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Atlasna Catalog Internals: codebase handbook. Open this file in a browser (diagrams need internet for Mermaid). -->
+<title>Atlasna Catalog Internals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --bg: #f3f5f4;
+    --surface: #ffffff;
+    --surface-2: #e9eeec;
+    --ink: #17211d;
+    --muted: #56635e;
+    --line: #d3dbd8;
+    --accent: #1f6b50;
+    --accent-soft: #dcebe4;
+    --code-bg: #eaefed;
+    --ok: #1f7a4c;
+    --warn: #9a5b0b;
+    --warn-soft: #f6ead6;
+    --bad: #b3261e;
+    --bad-soft: #f7e1df;
+    --info: #1c5a9c;
+    --info-soft: #dfe9f5;
+    --display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+    --body: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0f1513; --surface: #161f1c; --surface-2: #1d2824; --ink: #e4ebe8; --muted: #9aa8a2;
+      --line: #2b3833; --accent: #63c49a; --accent-soft: #1b3a2e; --code-bg: #1b2522;
+      --ok: #63c49a; --warn: #e3a64b; --warn-soft: #3a2c16; --bad: #f08a80; --bad-soft: #3d1f1c;
+      --info: #7fb2ea; --info-soft: #1a2c40;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0f1513; --surface: #161f1c; --surface-2: #1d2824; --ink: #e4ebe8; --muted: #9aa8a2;
+    --line: #2b3833; --accent: #63c49a; --accent-soft: #1b3a2e; --code-bg: #1b2522;
+    --ok: #63c49a; --warn: #e3a64b; --warn-soft: #3a2c16; --bad: #f08a80; --bad-soft: #3d1f1c;
+    --info: #7fb2ea; --info-soft: #1a2c40;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--body); font-size: 17px; line-height: 1.62;
+    padding-inline: 20px; padding-block: 0 80px;
+  }
+  .shell { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 56px; }
+  @media (max-width: 960px) { .shell { grid-template-columns: minmax(0, 1fr); gap: 0; } nav.toc { display: none; } }
+
+  /* Header */
+  header.top { max-width: 1180px; margin: 0 auto; padding-block: 56px 36px; border-bottom: 1px solid var(--line); margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(34px, 5vw, 52px); line-height: 1.05; letter-spacing: -.02em; margin: 10px 0 14px; text-wrap: balance; }
+  .lede { max-width: 68ch; color: var(--muted); font-size: 18.5px; margin: 0; }
+  .stack { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .chip { font-family: var(--mono); font-size: 12.5px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); }
+
+  /* TOC */
+  nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; font-family: var(--display); font-size: 14.5px; }
+  nav.toc .label { font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: toc; }
+  nav.toc li { counter-increment: toc; }
+  nav.toc a { display: flex; gap: 10px; padding: 5px 8px; border-radius: 6px; color: var(--ink); text-decoration: none; }
+  nav.toc a::before { content: counter(toc, decimal-leading-zero); font-family: var(--mono); font-size: 12px; color: var(--muted); padding-top: 2px; }
+  nav.toc a:hover, nav.toc a:focus-visible { background: var(--surface-2); outline: none; }
+
+  details.mtoc { display: none; margin-bottom: 32px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; font-family: var(--display); }
+  details.mtoc summary { cursor: pointer; font-weight: 700; }
+  details.mtoc ol { margin: 10px 0 0; padding-left: 22px; display: grid; gap: 4px; }
+  details.mtoc a { color: var(--ink); }
+  @media (max-width: 960px) { details.mtoc { display: block; } }
+
+  /* Content */
+  main { min-width: 0; }
+  section { padding-bottom: 28px; margin-bottom: 44px; border-bottom: 1px solid var(--line); scroll-margin-top: 20px; }
+  section:last-child { border-bottom: 0; }
+  h2 { font-family: var(--display); font-weight: 800; font-size: 29px; line-height: 1.15; letter-spacing: -.01em; margin: 0 0 6px; text-wrap: balance; display: flex; gap: 14px; align-items: baseline; }
+  h2 .n { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent); }
+  h3 { font-family: var(--display); font-weight: 700; font-size: 20px; margin: 30px 0 8px; text-wrap: balance; }
+  p, li { max-width: 72ch; }
+  p { margin: 0 0 14px; }
+  .sub { color: var(--muted); margin-bottom: 20px; }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  ul, ol { padding-left: 22px; margin: 0 0 14px; }
+  li { margin-bottom: 6px; }
+  strong { font-weight: 600; }
+
+  code { font-family: var(--mono); font-size: .84em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+  pre.code { font-family: var(--mono); font-size: 13.5px; line-height: 1.55; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 0 0 18px; }
+  pre.code code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+  .file { font-family: var(--mono); font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+  .c { color: var(--muted); }
+
+  .diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin: 6px 0 22px; overflow-x: auto; }
+  .diagram .cap { font-family: var(--display); font-size: 13.5px; color: var(--muted); margin: 0 0 10px; }
+  pre.mermaid { margin: 0; background: transparent; font-family: var(--display); text-align: center; }
+
+  .table-wrap { overflow-x: auto; margin: 4px 0 22px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; line-height: 1.45; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: var(--display); font-weight: 700; font-size: 13px; letter-spacing: .02em; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td code { white-space: nowrap; }
+  td.num, .tab { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13.5px; white-space: nowrap; }
+
+  .pill { display: inline-block; font-family: var(--mono); font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .s2 { background: var(--accent-soft); color: var(--ok); }
+  .s4 { background: var(--warn-soft); color: var(--warn); }
+  .s401 { background: var(--info-soft); color: var(--info); }
+  .s403, .s5 { background: var(--bad-soft); color: var(--bad); }
+  .m { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+  .get { color: var(--ok); } .post { color: var(--info); } .put { color: var(--warn); } .del { color: var(--bad); }
+
+  .note { border-left: 3px solid var(--accent); background: var(--surface); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 4px 0 20px; max-width: 76ch; }
+  .note.warn { border-left-color: var(--warn); }
+  .note p:last-child { margin-bottom: 0; }
+  .note .t { font-family: var(--display); font-weight: 700; font-size: 14px; display: block; margin-bottom: 4px; }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 6px 0 22px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .card h4 { font-family: var(--display); font-size: 15.5px; margin: 0 0 6px; }
+  .card p { font-size: 15px; margin: 0; color: var(--muted); }
+
+  .jwt { font-family: var(--mono); font-size: 13px; line-height: 1.6; word-break: break-all; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .jwt .h { color: var(--bad); } .jwt .p { color: var(--info); } .jwt .s { color: var(--ok); }
+
+  .timeline { list-style: none; padding: 0; margin: 6px 0 20px; display: grid; gap: 0; }
+  .timeline li { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 14px; padding: 12px 0; border-bottom: 1px dashed var(--line); max-width: none; margin: 0; }
+  .timeline li:last-child { border-bottom: 0; }
+  .timeline .hash { font-family: var(--mono); font-size: 13px; color: var(--accent); padding-top: 2px; }
+  .timeline .what { font-family: var(--display); font-weight: 700; font-size: 15.5px; }
+  .timeline .why { font-size: 15px; color: var(--muted); }
+  .phase { font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 18px 0 2px; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 560px) {
+    body { font-size: 16px; padding-inline: 16px; }
+    .timeline li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    h2 { font-size: 25px; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="eyebrow">atlasna-catalog · Spring Boot 4.1 · Java 21 · Phase 1</div>
+  <h1>Atlasna Catalog Internals</h1>
+  <p class="lede">A walkthrough of the whole backend: how a request travels through it, how login and permissions work, how errors and the database are handled, and every fix made along the way, with the reason for each.</p>
+  <div class="stack">
+    <span class="chip">Spring Security 7</span><span class="chip">JWT (jjwt 0.12)</span><span class="chip">JPA / Hibernate 7</span>
+    <span class="chip">PostgreSQL 16</span><span class="chip">Flyway 12</span><span class="chip">Lombok</span><span class="chip">39 tests</span>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="toc" aria-label="Contents">
+    <div class="label">Contents</div>
+    <ol>
+      <li><a href="#big-picture">The big picture</a></li>
+      <li><a href="#files">Every file, explained</a></li>
+      <li><a href="#lifecycle">Life of a request</a></li>
+      <li><a href="#authn">Authentication</a></li>
+      <li><a href="#jwt">Inside the JWT</a></li>
+      <li><a href="#authz">Authorization</a></li>
+      <li><a href="#errors">Error handling</a></li>
+      <li><a href="#catalog">The product catalog</a></li>
+      <li><a href="#ratelimit">Rate limiting, CORS, CSRF</a></li>
+      <li><a href="#config">Configuration and profiles</a></li>
+      <li><a href="#database">Database and Flyway</a></li>
+      <li><a href="#bootstrap">Admin bootstrap and seeding</a></li>
+      <li><a href="#tests">How it's tested</a></li>
+      <li><a href="#history">Every fix, in order</a></li>
+      <li><a href="#run">Run, test, deploy</a></li>
+      <li><a href="#next">What comes next</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <details class="mtoc">
+      <summary>Contents</summary>
+      <ol>
+        <li><a href="#big-picture">The big picture</a></li>
+        <li><a href="#files">Every file, explained</a></li>
+        <li><a href="#lifecycle">Life of a request</a></li>
+        <li><a href="#authn">Authentication</a></li>
+        <li><a href="#jwt">Inside the JWT</a></li>
+        <li><a href="#authz">Authorization</a></li>
+        <li><a href="#errors">Error handling</a></li>
+        <li><a href="#catalog">The product catalog</a></li>
+        <li><a href="#ratelimit">Rate limiting, CORS, CSRF</a></li>
+        <li><a href="#config">Configuration and profiles</a></li>
+        <li><a href="#database">Database and Flyway</a></li>
+        <li><a href="#bootstrap">Admin bootstrap and seeding</a></li>
+        <li><a href="#tests">How it's tested</a></li>
+        <li><a href="#history">Every fix, in order</a></li>
+        <li><a href="#run">Run, test, deploy</a></li>
+        <li><a href="#next">What comes next</a></li>
+      </ol>
+    </details>
+
+    <!-- 1 -->
+    <section id="big-picture">
+      <h2><span class="n">01</span>The big picture</h2>
+      <p class="sub">What the app does, and how its layers fit together.</p>
+      <p>Atlasna is a <strong>single-store marketplace</strong>. There is one seller, the store itself, and two kinds of users:</p>
+      <ul>
+        <li><strong>ADMIN</strong> manages the catalog: creates, updates and deletes products.</li>
+        <li><strong>CUSTOMER</strong> registers, logs in and browses. Ordering comes in a later phase.</li>
+      </ul>
+      <p>Anyone can browse products without logging in. Only admins can change them. Logged-in users prove who they are with a <strong>JWT</strong> (a signed token) sent on every request.</p>
+
+      <div class="diagram">
+        <p class="cap">The layers. A request goes down through them; the response comes back up.</p>
+<pre class="mermaid">
+flowchart TB
+  C["Client (Postman, future web app)"] -->|HTTP + optional Bearer token| F
+  subgraph SEC["Spring Security filter chain"]
+    F["JwtAuthFilter<br/>who is calling?"] --> R["URL rules<br/>may they reach this URL?"]
+  end
+  R --> CT["Controllers<br/>AuthController · ProductController"]
+  CT -->|"@PreAuthorize check"| SV["Services<br/>AuthService · ProductService"]
+  SV --> RP["Repositories<br/>UserRepository · ProductRepository"]
+  RP --> DB[("PostgreSQL")]
+  FW["Flyway migrations"] -.->|builds schema at startup| DB
+  CT -. errors .-> EH["GlobalExceptionHandler<br/>turns exceptions into JSON"]
+  SV -. errors .-> EH
+</pre>
+      </div>
+
+      <div class="grid2">
+        <div class="card"><h4>Controller</h4><p>Receives HTTP, validates the JSON body, calls a service, returns JSON. No business logic.</p></div>
+        <div class="card"><h4>Service</h4><p>The business rules: "emails are unique", "deleting a product hides it". Owns transactions.</p></div>
+        <div class="card"><h4>Repository</h4><p>Database access. Spring Data writes the SQL from method names like <code>findByEmail</code>.</p></div>
+        <div class="card"><h4>DTO</h4><p>The shape of JSON in and out. Keeps database entities, like the password hash, out of API responses.</p></div>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section id="files">
+      <h2><span class="n">02</span>Every file, explained</h2>
+      <p class="sub">All source files, grouped by package under <code>com.atlasna.catalog</code>.</p>
+
+      <h3>Entry point and configuration</h3>
+      <div class="table-wrap"><table>
+        <tr><th>File</th><th>What it does</th></tr>
+        <tr><td><code>AtlasnaCatalogApplication</code></td><td>Starts the app. Registers the three settings classes: JWT, admin bootstrap, rate limits.</td></tr>
+        <tr><td><code>config/SecurityConfig</code></td><td>The security rulebook: which URLs are public, the JWT filter, password hashing, CORS, and the 401 handler.</td></tr>
+        <tr><td><code>config/AdminBootstrap</code></td><td>At startup, creates the first admin from environment variables, if configured.</td></tr>
+        <tr><td><code>config/AdminBootstrapProperties</code></td><td>Holds <code>atlasna.bootstrap.admin.*</code>: email, password, full name.</td></tr>
+        <tr><td><code>config/DataSeeder</code></td><td>Dev only: inserts 3 demo products into an empty database.</td></tr>
+      </table></div>
+
+      <h3>Users and login (<code>user</code>)</h3>
+      <div class="table-wrap"><table>
+        <tr><th>File</th><th>What it does</th></tr>
+        <tr><td><code>User</code></td><td>The <code>users</code> table as a Java class. Also implements Spring Security's <code>UserDetails</code>, so Security can use it directly. Has <code>normalizeEmail</code>.</td></tr>
+        <tr><td><code>Role</code></td><td>Enum: <code>ADMIN</code>, <code>CUSTOMER</code>.</td></tr>
+        <tr><td><code>UserRepository</code></td><td><code>findByEmail</code>, <code>existsByEmail</code>, <code>existsByRole</code>.</td></tr>
+        <tr><td><code>AuthController</code></td><td><code>POST /api/auth/register</code> and <code>POST /api/auth/login</code>.</td></tr>
+        <tr><td><code>AuthService</code></td><td>Register (hash the password, save, issue a token) and login (rate-limit, verify the password, issue a token).</td></tr>
+        <tr><td><code>dto/RegisterRequest</code>, <code>LoginRequest</code></td><td>Incoming JSON, with validation rules (<code>@Email</code>, <code>@Size(min=8)</code>, …).</td></tr>
+        <tr><td><code>dto/AuthResponse</code>, <code>UserResponse</code></td><td>Outgoing JSON: the token, its type, lifetime, and a safe view of the user (no password hash).</td></tr>
+      </table></div>
+
+      <h3>Security machinery (<code>security</code>)</h3>
+      <div class="table-wrap"><table>
+        <tr><th>File</th><th>What it does</th></tr>
+        <tr><td><code>JwtService</code></td><td>Creates tokens, reads the email out of them, checks signature and expiry.</td></tr>
+        <tr><td><code>JwtAuthFilter</code></td><td>Runs on every request. If a valid <code>Bearer</code> token is present, marks the request as coming from that user.</td></tr>
+        <tr><td><code>JwtProperties</code></td><td><code>atlasna.jwt.secret</code> and <code>expiration-minutes</code>, validated at startup. The secret must be set and at least 32 characters.</td></tr>
+        <tr><td><code>UserDetailsServiceImpl</code></td><td>How Security loads a user: by normalized email, from <code>UserRepository</code>.</td></tr>
+        <tr><td><code>FixedWindowRateLimiter</code></td><td>A generic in-memory counter: at most <em>N</em> hits per key per time window.</td></tr>
+        <tr><td><code>LoginRateLimiter</code></td><td>Two of those counters: failed logins per email, and attempts per client IP.</td></tr>
+        <tr><td><code>LoginRateLimitProperties</code></td><td>The limits, configurable, with defaults 5 / 15 min and 20 / 1 min.</td></tr>
+      </table></div>
+
+      <h3>Products (<code>product</code>)</h3>
+      <div class="table-wrap"><table>
+        <tr><th>File</th><th>What it does</th></tr>
+        <tr><td><code>Product</code></td><td>The <code>products</code> table. Has an <code>active</code> flag for soft delete, and timestamps set automatically.</td></tr>
+        <tr><td><code>Category</code></td><td>Enum of 7 categories: ELECTRONICS … BOOKS.</td></tr>
+        <tr><td><code>ProductRepository</code></td><td>Paged queries: all active, active by category, active by name search.</td></tr>
+        <tr><td><code>ProductService</code></td><td>List, get, create, update, soft delete.</td></tr>
+        <tr><td><code>ProductController</code></td><td>The 5 <code>/api/products</code> endpoints. The 3 write endpoints require <code>hasRole('ADMIN')</code>.</td></tr>
+        <tr><td><code>dto/ProductRequest</code>, <code>ProductResponse</code></td><td>JSON in, with validation (price &gt; 0, stock ≥ 0), and JSON out.</td></tr>
+      </table></div>
+
+      <h3>Errors (<code>common/exception</code>)</h3>
+      <div class="table-wrap"><table>
+        <tr><th>File</th><th>What it does</th></tr>
+        <tr><td><code>ApiError</code></td><td>The one JSON shape every error uses.</td></tr>
+        <tr><td><code>GlobalExceptionHandler</code></td><td>Catches exceptions from anywhere and maps each to a status code plus an <code>ApiError</code>.</td></tr>
+        <tr><td><code>EmailAlreadyInUseException</code>, <code>InvalidCredentialsException</code>, <code>ResourceNotFoundException</code>, <code>TooManyRequestsException</code></td><td>Our own exceptions. They become 409, 401, 404 and 429.</td></tr>
+      </table></div>
+
+      <h3>Resources and project files</h3>
+      <div class="table-wrap"><table>
+        <tr><th>File</th><th>What it does</th></tr>
+        <tr><td><code>application.yml</code></td><td>Settings for every environment. Contains no credentials.</td></tr>
+        <tr><td><code>application-dev.yml</code></td><td>Local-only values: the docker Postgres login, the dev JWT secret, the dev admin.</td></tr>
+        <tr><td><code>db/migration/V1__init_users_and_products.sql</code></td><td>Creates both tables. Flyway runs it once per database.</td></tr>
+        <tr><td><code>test/resources/application-test.yml</code></td><td>Tests use an in-memory H2 database in PostgreSQL mode.</td></tr>
+        <tr><td><code>pom.xml</code></td><td>Dependencies. Also turns on the <code>dev</code> profile for <code>./mvnw spring-boot:run</code> only.</td></tr>
+        <tr><td><code>docker-compose.yml</code></td><td>Local Postgres 16 with a persistent volume.</td></tr>
+        <tr><td><code>docs/postman/…collection.json</code></td><td>23 Postman requests, with checks, covering the whole API.</td></tr>
+      </table></div>
+    </section>
+
+    <!-- 3 -->
+    <section id="lifecycle">
+      <h2><span class="n">03</span>Life of a request</h2>
+      <p class="sub">What happens between "Send" in Postman and the JSON coming back.</p>
+      <div class="diagram">
+        <p class="cap">Every request takes this path. Any step can stop it early with an error.</p>
+<pre class="mermaid">
+flowchart TD
+  A["HTTP request arrives on :8080"] --> B{"Authorization: Bearer … header?"}
+  B -- no --> D
+  B -- yes --> C["JwtAuthFilter: check signature + expiry,<br/>load user from DB"]
+  C -- valid --> C2["Request is now 'logged in as' that user"]
+  C -- "invalid / expired" --> D["Request continues as anonymous"]
+  C2 --> E
+  D --> E{"URL rule allows it?"}
+  E -- "no, and anonymous" --> X1["401 Unauthorized"]
+  E -- yes --> G["Controller: validate JSON body"]
+  G -- invalid --> X2["400 Bad Request + fieldErrors"]
+  G -- ok --> H{"@PreAuthorize hasRole('ADMIN')<br/>(write endpoints only)"}
+  H -- "not admin" --> X3["403 Forbidden"]
+  H -- ok --> I["Service → Repository → PostgreSQL"]
+  I -- "not found / conflict" --> X4["404 / 409"]
+  I -- ok --> J["200 / 201 / 204 + JSON"]
+</pre>
+      </div>
+      <p>This app is <strong>stateless</strong>: the server keeps no login session. Each request carries its own proof of identity (the token), and the server forgets it once the response is sent. That's why <code>SessionCreationPolicy.STATELESS</code> is set.</p>
+    </section>
+
+    <!-- 4 -->
+    <section id="authn">
+      <h2><span class="n">04</span>Authentication: who are you?</h2>
+      <p class="sub">Registering, logging in, and how later requests prove identity.</p>
+
+      <h3>How passwords are stored</h3>
+      <p>Passwords are never stored. We store a <strong>BCrypt hash</strong>, like <code>$2a$10$OUjvRSX2Rk…</code>. BCrypt is deliberately slow and adds a random salt, so a stolen database can't be reversed into passwords quickly, and two users with the same password get different hashes. When someone logs in, BCrypt hashes the password they typed and compares the two hashes.</p>
+
+      <h3>Register</h3>
+      <div class="diagram">
+        <p class="cap">POST /api/auth/register</p>
+<pre class="mermaid">
+sequenceDiagram
+  participant Client
+  participant AC as AuthController
+  participant AS as AuthService
+  participant DB as PostgreSQL
+  Client->>AC: {fullName, email, password}
+  AC->>AC: @Valid (email format, password ≥ 8 chars)
+  AC->>AS: register(request)
+  AS->>AS: email = normalizeEmail("Jane@Example.com") → "jane@example.com"
+  AS->>DB: existsByEmail?
+  alt already exists
+    AS-->>Client: 409 Email Already In Use
+  else new
+    AS->>AS: hash password with BCrypt, role = CUSTOMER
+    AS->>DB: saveAndFlush(user)
+    Note over AS,DB: If two requests race, the UNIQUE(email)<br/>constraint rejects one → 409, not 500
+    AS->>AS: generate JWT
+    AS-->>Client: 201 {accessToken, tokenType, expiresInSeconds, user}
+  end
+</pre>
+      </div>
+      <p>Everyone who registers gets the <code>CUSTOMER</code> role. There is no way to register as an admin; admins come only from the <a href="#bootstrap">bootstrap</a>.</p>
+
+      <h3>Login</h3>
+      <div class="diagram">
+        <p class="cap">POST /api/auth/login. Spring Security's own components do the password check.</p>
+<pre class="mermaid">
+sequenceDiagram
+  participant Client
+  participant AS as AuthService
+  participant RL as LoginRateLimiter
+  participant AM as AuthenticationManager
+  participant DAP as DaoAuthenticationProvider
+  participant UDS as UserDetailsServiceImpl
+  Client->>AS: {email, password} + client IP
+  AS->>RL: checkAndRecordAttempt(email, ip)
+  alt locked
+    RL-->>Client: 429 + Retry-After
+  end
+  AS->>AM: authenticate(email, password)
+  AM->>DAP: delegate
+  DAP->>UDS: loadUserByUsername(email)
+  UDS-->>DAP: User (with BCrypt hash)
+  DAP->>DAP: BCrypt.matches(typed password, hash)
+  alt wrong password or unknown email
+    DAP-->>AS: BadCredentialsException
+    AS->>RL: recordFailure(email)
+    AS-->>Client: 401 "Invalid email or password"
+  else correct
+    AS->>RL: recordSuccess(email) (resets the count)
+    AS-->>Client: 200 {accessToken, …}
+  end
+</pre>
+      </div>
+      <div class="note"><span class="t">Why the message is always "Invalid email or password"</span>
+        <p>A wrong password and an unknown email get exactly the same response. If they differed, an attacker could use the login form to find out which emails have accounts. Spring's <code>DaoAuthenticationProvider</code> does this on purpose, and our handler keeps the message generic.</p></div>
+
+      <h3>Every request after login</h3>
+      <div class="diagram">
+        <p class="cap">JwtAuthFilter, on every request that carries a token.</p>
+<pre class="mermaid">
+sequenceDiagram
+  participant Client
+  participant F as JwtAuthFilter
+  participant JS as JwtService
+  participant UDS as UserDetailsServiceImpl
+  participant SC as SecurityContext
+  Client->>F: GET/POST … Authorization: Bearer eyJ…
+  F->>JS: extractUsername(token)
+  Note right of JS: parsing verifies the signature.<br/>Tampered or garbage → exception
+  JS-->>F: "admin@atlasna.dz"
+  F->>UDS: loadUserByUsername (fresh from DB)
+  F->>JS: isTokenValid (same user, not expired)
+  F->>SC: set authentication (user + ROLE_ADMIN)
+  Note over F: Any failure (bad, expired, deleted user):<br/>continue as anonymous, never crash
+  F->>F: continue to the rest of the chain
+</pre>
+      </div>
+      <p>The filter <strong>loads the user from the database on every request</strong>. The <code>roles</code> claim inside the token is informational only. If you delete a user or change their role, that takes effect on their very next request, even though their old token hasn't expired yet.</p>
+    </section>
+
+    <!-- 5 -->
+    <section id="jwt">
+      <h2><span class="n">05</span>Inside the JWT</h2>
+      <p class="sub">What the token contains, and what stops anyone from forging one.</p>
+      <p>A JWT is three Base64 parts joined by dots: <span style="color:var(--bad)">header</span>.<span style="color:var(--info)">payload</span>.<span style="color:var(--ok)">signature</span>.</p>
+      <div class="jwt"><span class="h">eyJhbGciOiJIUzM4NCJ9</span>.<span class="p">eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwicm9sZXMiOlsiUk9MRV9DVVNUT01FUiJdLCJpYXQiOjE3OTAyMjc2MzcsImV4cCI6MTc5MDIzMTIzN30</span>.<span class="s">usZU29HFah2ZLCMDkHFwVadc_VHgVh8d3Yk5P8OdHNPsdYDWFzHjYjLiJbW6j9_X</span></div>
+      <pre class="code"><code><span class="c">// header: which algorithm signed it</span>
+{ "alg": "HS384" }
+<span class="c">// payload: the claims (anyone can read these; Base64 is not encryption)</span>
+{
+  "sub":   "test@example.com",       <span class="c">// subject = the user's email</span>
+  "roles": ["ROLE_CUSTOMER"],
+  "iat":   1790227637,               <span class="c">// issued at (Unix seconds)</span>
+  "exp":   1790231237                <span class="c">// expires 3600 s later</span>
+}
+<span class="c">// signature = HMAC-SHA384(header + "." + payload, ATLASNA_JWT_SECRET)</span></code></pre>
+      <ul>
+        <li><strong>Why it can't be forged:</strong> changing any character in the payload breaks the signature, and producing a valid one requires the secret, which only the server knows. That's why the secret must be long, random and never committed. The app refuses to start without one.</li>
+        <li><strong>Payload is readable:</strong> never put anything secret in a JWT. We only put the email and role.</li>
+        <li><strong>Algorithm:</strong> jjwt picks HS256, HS384 or HS512 based on the key's length. Our dev secret is 62 bytes, so it uses HS384.</li>
+        <li><strong>No logout yet:</strong> a token stays valid until <code>exp</code> (60 minutes). Refresh tokens and revocation come with the frontend phase.</li>
+      </ul>
+    </section>
+
+    <!-- 6 -->
+    <section id="authz">
+      <h2><span class="n">06</span>Authorization: are you allowed?</h2>
+      <p class="sub">Two layers of rules, and the difference between 401 and 403.</p>
+
+      <h3>Layer 1: URL rules in <code>SecurityConfig</code></h3>
+      <p>These are checked top to bottom, and the first match wins. That's why the catch-all <code>anyRequest()</code> comes last.</p>
+      <div class="table-wrap"><table>
+        <tr><th>Rule</th><th>Matches</th><th>Result</th></tr>
+        <tr><td><code>"/api/auth/**"</code></td><td>register, login</td><td>Anyone</td></tr>
+        <tr><td><code>HttpMethod.GET, "/api/products/**"</code></td><td>list and view products</td><td>Anyone</td></tr>
+        <tr><td><code>"/actuator/health"</code></td><td>health check</td><td>Anyone</td></tr>
+        <tr><td><code>anyRequest()</code></td><td>everything else (POST/PUT/DELETE products…)</td><td>Must be logged in</td></tr>
+      </table></div>
+      <div class="note warn"><span class="t">The Spring Boot 4 trap</span>
+        <p>The second rule passes <code>HttpMethod.GET</code>, an object. Writing <code>"GET"</code> as a string would be read as a <em>URL pattern</em> called "GET", which makes the rule protect nothing. It compiles and fails silently. We checked the Spring Security 7.1.1 jar to confirm the right signature.</p></div>
+
+      <h3>Layer 2: method rules with <code>@PreAuthorize</code></h3>
+      <pre class="code"><code>@PostMapping
+@PreAuthorize("hasRole('ADMIN')")   <span class="c">// checks the user has authority "ROLE_ADMIN"</span>
+public ResponseEntity&lt;ProductResponse&gt; create(...)</code></pre>
+      <p>Layer 1 answers "are you logged in?". Layer 2 answers "do you have the right role?". <code>@EnableMethodSecurity</code> on <code>SecurityConfig</code> switches layer 2 on. <code>hasRole('ADMIN')</code> looks for <code>ROLE_ADMIN</code>, which is why <code>User.getAuthorities()</code> adds the <code>ROLE_</code> prefix.</p>
+
+      <h3>401 or 403?</h3>
+      <div class="table-wrap"><table>
+        <tr><th>Situation</th><th>Status</th><th>Meaning</th><th>Where it comes from</th></tr>
+        <tr><td>No token / bad token / expired token on a protected URL</td><td><span class="pill s401">401</span></td><td>"We don't know who you are"</td><td>Authentication entry point in <code>SecurityConfig</code> → <code>GlobalExceptionHandler</code></td></tr>
+        <tr><td>Valid customer token on an admin endpoint</td><td><span class="pill s403">403</span></td><td>"We know who you are; you're not allowed"</td><td><code>@PreAuthorize</code> → <code>AccessDeniedException</code> → handler</td></tr>
+        <tr><td>Bad token on a <em>public</em> endpoint</td><td><span class="pill s2">200</span></td><td>Public stays public</td><td>The filter ignores the token and continues as anonymous</td></tr>
+      </table></div>
+    </section>
+
+    <!-- 7 -->
+    <section id="errors">
+      <h2><span class="n">07</span>Error handling</h2>
+      <p class="sub">One JSON shape for every error, and one class that decides the status.</p>
+      <pre class="code"><code>{
+  "timestamp": "2026-09-24T05:28:25.682Z",
+  "status": 400,
+  "error": "Validation Failed",
+  "message": "One or more fields are invalid",
+  "fieldErrors": { "email": "Email must be valid", "password": "Password must be at least 8 characters" }
+}</code></pre>
+      <div class="table-wrap"><table>
+        <tr><th>Exception</th><th>Status</th><th>When</th></tr>
+        <tr><td><code>MethodArgumentNotValidException</code></td><td><span class="pill s4">400</span></td><td>Body fails <code>@Valid</code> rules; lists each field</td></tr>
+        <tr><td><code>HttpMessageNotReadableException</code></td><td><span class="pill s4">400</span></td><td>Broken JSON, or a bad enum value in the body</td></tr>
+        <tr><td><code>MethodArgumentTypeMismatchException</code></td><td><span class="pill s4">400</span></td><td><code>?category=NOPE</code>, <code>/products/abc</code></td></tr>
+        <tr><td><code>InvalidCredentials</code> / <code>BadCredentials</code></td><td><span class="pill s401">401</span></td><td>Wrong email or password</td></tr>
+        <tr><td><code>AuthenticationException</code></td><td><span class="pill s401">401</span></td><td>Protected URL without a valid token</td></tr>
+        <tr><td><code>AccessDeniedException</code></td><td><span class="pill s403">403</span></td><td>Logged in, wrong role</td></tr>
+        <tr><td><code>ResourceNotFoundException</code></td><td><span class="pill s4">404</span></td><td>Product missing or deleted</td></tr>
+        <tr><td><code>EmailAlreadyInUseException</code></td><td><span class="pill s4">409</span></td><td>Duplicate registration</td></tr>
+        <tr><td><code>TooManyRequestsException</code></td><td><span class="pill s4">429</span></td><td>Login locked; adds a <code>Retry-After</code> header</td></tr>
+        <tr><td>Spring's own (<code>ErrorResponse</code>)</td><td><span class="pill s4">404/405/415</span></td><td>Unknown route, wrong method, wrong content type: they keep their real status</td></tr>
+        <tr><td>Anything else</td><td><span class="pill s5">500</span></td><td>A real bug. The client gets a generic message; the full stack trace goes to the log only</td></tr>
+      </table></div>
+      <p>The 500 handler never reveals internal details to the client (no stack traces or SQL errors), because those help attackers. It logs them, so you can still debug.</p>
+    </section>
+
+    <!-- 8 -->
+    <section id="catalog">
+      <h2><span class="n">08</span>The product catalog</h2>
+      <p class="sub">Five endpoints, paging, and why "delete" doesn't actually delete.</p>
+      <div class="table-wrap"><table>
+        <tr><th>Method</th><th>Path</th><th>Who</th><th>Success</th></tr>
+        <tr><td class="m get">GET</td><td><code>/api/products</code></td><td>Anyone</td><td><span class="pill s2">200</span> page of products</td></tr>
+        <tr><td class="m get">GET</td><td><code>/api/products/{id}</code></td><td>Anyone</td><td><span class="pill s2">200</span> one product</td></tr>
+        <tr><td class="m post">POST</td><td><code>/api/products</code></td><td>ADMIN</td><td><span class="pill s2">201</span> created</td></tr>
+        <tr><td class="m put">PUT</td><td><code>/api/products/{id}</code></td><td>ADMIN</td><td><span class="pill s2">200</span> replaced</td></tr>
+        <tr><td class="m del">DELETE</td><td><code>/api/products/{id}</code></td><td>ADMIN</td><td><span class="pill s2">204</span> hidden</td></tr>
+      </table></div>
+      <h3>Listing: which query runs</h3>
+      <pre class="code"><code>if (search is not blank)   → findByActiveTrueAndNameContainingIgnoreCase(search)
+else if (category != null) → findByActiveTrueAndCategory(category)
+else                       → findByActiveTrue()</code></pre>
+      <p>So <code>search</code> wins if you send both. Spring reads <code>?page=0&amp;size=10&amp;sort=price,desc</code> into a <code>Pageable</code> automatically. The response uses Spring Data's stable page format:</p>
+      <pre class="code"><code>{ "content": [ …products… ],
+  "page": { "size": 10, "number": 0, "totalElements": 3, "totalPages": 1 } }</code></pre>
+      <h3>Soft delete</h3>
+      <p><code>DELETE</code> sets <code>active = false</code> instead of removing the row. Public reads only return active products, so a deleted product shows as 404. The row stays so that future orders can still point to what was bought. Admin <code>PUT</code> can still find an inactive product by id.</p>
+      <p>Updates need no explicit <code>save()</code>. Inside a <code>@Transactional</code> method, Hibernate notices changes to a loaded entity and writes them when the transaction commits. This is called dirty checking.</p>
+    </section>
+
+    <!-- 9 -->
+    <section id="ratelimit">
+      <h2><span class="n">09</span>Rate limiting, CORS and CSRF</h2>
+      <p class="sub">Protection against password guessing, and the browser-facing rules.</p>
+      <h3>Login rate limiting</h3>
+      <div class="grid2">
+        <div class="card"><h4>Per email: 5 failures / 15 min</h4><p>Stops guessing one account's password. While locked, even the correct password gets 429, so guessing gains nothing. A successful login resets the count.</p></div>
+        <div class="card"><h4>Per IP: 20 attempts / 1 min</h4><p>Stops one client trying many accounts. Counts every attempt, successful or not.</p></div>
+      </div>
+      <div class="diagram">
+        <p class="cap">Fixed window for one email, with a limit of 5</p>
+<pre class="mermaid">
+flowchart LR
+  A["fail 1"] --> B["fail 2"] --> C["fail 3"] --> D["fail 4"] --> E["fail 5"] --> F["6th try: 429<br/>Retry-After: 900"]
+  F -.->|15 min after the first failure| G["window resets:<br/>counting starts again"]
+</pre>
+      </div>
+      <ul>
+        <li><strong>In memory:</strong> counters live in a <code>ConcurrentHashMap</code>, and restarting the app clears them. That's fine for one server; several servers would need a shared store such as Redis.</li>
+        <li><strong>Behind a proxy:</strong> the client IP is <code>request.getRemoteAddr()</code>. Behind a load balancer that would be the proxy's IP, so set <code>server.forward-headers-strategy</code> when you deploy.</li>
+      </ul>
+      <h3>CORS</h3>
+      <p>Browsers block a web page on one origin from calling an API on another unless the API allows it. We allow <code>http://localhost:5173</code> (Vite) and <code>http://localhost:3000</code> (React/Next), the standard methods, and the <code>Authorization</code> and <code>Content-Type</code> headers. Postman ignores CORS, since it isn't a browser. Your real frontend domain goes on this list at deploy time.</p>
+      <h3>CSRF is off, deliberately</h3>
+      <p>A CSRF attack tricks a browser into sending a request with credentials it attaches <em>automatically</em>, meaning cookies. Our credential is an <code>Authorization</code> header that the frontend sets itself, and a malicious site can't make the browser add it. So CSRF protection isn't needed. If login ever moves to cookies, it must come back on. The comment in <code>SecurityConfig</code> says exactly this.</p>
+    </section>
+
+    <!-- 10 -->
+    <section id="config">
+      <h2><span class="n">10</span>Configuration and profiles</h2>
+      <p class="sub">Which settings apply where, and why secrets never live in the repo.</p>
+      <div class="diagram">
+        <p class="cap">Spring merges these files. A profile file overrides the base file.</p>
+<pre class="mermaid">
+flowchart LR
+  B["application.yml<br/>every environment<br/>no credentials"] --> DEV["+ application-dev.yml<br/>./mvnw spring-boot:run"]
+  B --> TEST["+ application-test.yml<br/>./mvnw test"]
+  B --> PROD["+ environment variables<br/>java -jar (production)"]
+  DEV --> D1["docker Postgres,<br/>dev secret, dev admin"]
+  TEST --> T1["H2 in memory,<br/>test secret"]
+  PROD --> P1["real DB, real secret,<br/>bootstrap admin"]
+</pre>
+      </div>
+      <p>The <code>dev</code> profile is switched on only by the Maven plugin (the <code>&lt;profiles&gt;</code> block in <code>pom.xml</code>). A packaged jar runs with the <code>default</code> profile, so dev values can't leak into production by accident.</p>
+      <h3>Production environment variables</h3>
+      <div class="table-wrap"><table>
+        <tr><th>Variable</th><th>Required</th><th>Purpose</th></tr>
+        <tr><td><code>ATLASNA_JWT_SECRET</code></td><td>Yes</td><td>Signs tokens. At least 32 characters; generate one with <code>openssl rand -base64 48</code>.</td></tr>
+        <tr><td><code>SPRING_DATASOURCE_URL</code></td><td>Yes</td><td>e.g. <code>jdbc:postgresql://host:5432/atlasna</code></td></tr>
+        <tr><td><code>SPRING_DATASOURCE_USERNAME</code> / <code>_PASSWORD</code></td><td>Yes</td><td>Database login</td></tr>
+        <tr><td><code>ATLASNA_BOOTSTRAP_ADMIN_EMAIL</code> / <code>_PASSWORD</code></td><td>First deploy</td><td>Creates the first admin. Password at least 12 characters.</td></tr>
+      </table></div>
+      <p><strong>Fail fast:</strong> if a required value is missing, the app refuses to start and says which one. That's better than starting in a broken or insecure state.</p>
+      <pre class="code"><code>APPLICATION FAILED TO START
+    Property: atlasna.jwt.secret
+    Reason: atlasna.jwt.secret must be set (use the ATLASNA_JWT_SECRET environment variable)</code></pre>
+    </section>
+
+    <!-- 11 -->
+    <section id="database">
+      <h2><span class="n">11</span>Database and Flyway</h2>
+      <p class="sub">Two tables, owned by versioned SQL migrations.</p>
+      <div class="diagram">
+        <p class="cap">Schema created by V1. The two tables aren't linked yet; orders will link them later.</p>
+<pre class="mermaid">
+erDiagram
+  USERS {
+    bigint id PK "identity"
+    varchar full_name
+    varchar email UK "uk_users_email"
+    varchar password_hash "BCrypt"
+    varchar role "ADMIN or CUSTOMER"
+    boolean enabled
+    timestamptz created_at
+  }
+  PRODUCTS {
+    bigint id PK "identity"
+    varchar name
+    varchar description "max 2000"
+    numeric price "12,2"
+    varchar category "7 values"
+    int stock_quantity
+    boolean active "soft delete"
+    timestamptz created_at
+    timestamptz updated_at
+  }
+</pre>
+      </div>
+      <h3>How Flyway works here</h3>
+      <ol>
+        <li>At startup, Flyway looks at the <code>flyway_schema_history</code> table to see which migrations have run.</li>
+        <li>It runs any new <code>V&lt;n&gt;__*.sql</code> files in order and records each one.</li>
+        <li>Then Hibernate starts with <code>ddl-auto: validate</code>. It checks that the tables match the Java entities and refuses to start if they don't, but never changes them itself.</li>
+      </ol>
+      <div class="note"><span class="t">Changing the schema later</span>
+        <p>Never edit <code>V1</code> after it has run anywhere. Add <code>V2__add_orders.sql</code> (and so on) instead. Adding a new <code>Category</code> or <code>Role</code> value also needs a migration, because those columns have <code>CHECK</code> constraints that list the allowed values.</p></div>
+      <p><strong>Why not <code>ddl-auto: update</code>?</strong> It can add columns but can't rename them, can't move data, and keeps no history. On a real database with customer data, that eventually breaks something.</p>
+    </section>
+
+    <!-- 12 -->
+    <section id="bootstrap">
+      <h2><span class="n">12</span>Admin bootstrap and dev seeding</h2>
+      <p class="sub">How the first admin exists, and where demo data comes from.</p>
+      <div class="diagram">
+        <p class="cap">AdminBootstrap runs once at every startup, in every environment</p>
+<pre class="mermaid">
+flowchart TD
+  S["App starts"] --> Q{"ATLASNA_BOOTSTRAP_ADMIN_EMAIL set?"}
+  Q -- no --> Q2{"Any ADMIN in DB?"}
+  Q2 -- no --> W["Log warning: how to create one"]
+  Q2 -- yes --> Done["Nothing to do"]
+  Q -- yes --> P{"password ≥ 12 chars?"}
+  P -- no --> Fail["Refuse to start"]
+  P -- yes --> E{"account with that email exists?"}
+  E -- yes --> Keep["Leave it alone<br/>(never promote a customer)"]
+  E -- no --> Create["Create ADMIN with BCrypt hash"]
+</pre>
+      </div>
+      <p>It's safe to leave the variables set: once the account exists, nothing changes. In dev, <code>application-dev.yml</code> supplies <code>admin@atlasna.dz</code> / <code>ChangeMe123!</code> through the same path. <code>DataSeeder</code> (dev only) adds 3 demo products when the products table is empty.</p>
+    </section>
+
+    <!-- 13 -->
+    <section id="tests">
+      <h2><span class="n">13</span>How it's tested</h2>
+      <p class="sub">39 automated tests. Run them with <code>./mvnw test</code>.</p>
+      <div class="table-wrap"><table>
+        <tr><th>Test class</th><th class="tab">Tests</th><th>What it proves</th></tr>
+        <tr><td><code>ApiIntegrationTests</code></td><td class="num">23</td><td>The real app over HTTP (MockMvc): register, login, 401/403 rules, CRUD, soft delete, bad tokens, email case, 400 mapping, page format, rate limits</td></tr>
+        <tr><td><code>AdminBootstrapTest</code></td><td class="num">5</td><td>Creates the admin, never promotes existing accounts, rejects weak passwords</td></tr>
+        <tr><td><code>FixedWindowRateLimiterTest</code></td><td class="num">4</td><td>Counting, blocking, window reset, <code>Retry-After</code> rounding (with a fake clock)</td></tr>
+        <tr><td><code>JwtPropertiesValidationTest</code></td><td class="num">3</td><td>Refuses to start without a secret, or with one too short</td></tr>
+        <tr><td><code>AuthServiceTest</code></td><td class="num">1</td><td>The registration race returns 409, not 500</td></tr>
+        <tr><td><code>SchemaMigrationTest</code></td><td class="num">1</td><td>Flyway ran V1 and nothing is pending</td></tr>
+        <tr><td><code>BaseConfigHasNoCredentialsTest</code></td><td class="num">1</td><td>No password or secret sneaks back into <code>application.yml</code></td></tr>
+        <tr><td><code>AtlasnaCatalogApplicationTests</code></td><td class="num">1</td><td>The whole app starts</td></tr>
+      </table></div>
+      <h3>How we know the tests actually test something</h3>
+      <ul>
+        <li><strong>Red first:</strong> every regression test was written before its fix and seen to fail with the real bug's error.</li>
+        <li><strong>Mutation checks:</strong> to test the tests, I broke the code on purpose: removed <code>@PreAuthorize</code>, disabled the rate limiter, renamed a column in V1. Each time the tests failed (<code>expected 403 but was 201</code>, <code>expected 429 but was 200</code>, <code>missing column [stock_quantity]</code>), and then I restored the code.</li>
+        <li><strong>Live checks:</strong> each fix was also exercised against the running app and real Postgres, including 20 truly concurrent registrations and a token forged with the old public secret, which was rejected.</li>
+      </ul>
+    </section>
+
+    <!-- 14 -->
+    <section id="history">
+      <h2><span class="n">14</span>Every fix, in order</h2>
+      <p class="sub">The git history, with the problem each commit solved.</p>
+
+      <div class="phase">Build</div>
+      <ol class="timeline">
+        <li><span class="hash">94017e3</span><div><div class="what">Phase 1: JWT auth + product catalog API</div><div class="why">All 19 steps of the spec, compiled one file at a time. Verified with curl: public listing 200, register 201, admin create 201, customer create 403.</div></div></li>
+      </ol>
+
+      <div class="phase">Review: bugs the checklist missed</div>
+      <ol class="timeline">
+        <li><span class="hash">db6eaf6</span><div><div class="what">Real integration tests</div><div class="why">There was only one test, which just started the app. Added tests for the actual rules, including customer → 403.</div></div></li>
+        <li><span class="hash">eac75ac</span><div><div class="what">Bad or expired tokens are ignored instead of crashing</div><div class="why">An expired token made even public product browsing fail, because the JWT exception escaped the filter.</div></div></li>
+        <li><span class="hash">5358a3d</span><div><div class="what">Email case normalized</div><div class="why">Registering <code>Jane@Example.com</code> then logging in with the same text gave 401; a duplicate in different case gave 500.</div></div></li>
+        <li><span class="hash">5046206</span><div><div class="what">Client mistakes return 4xx, not 500</div><div class="why">Broken JSON, bad enums, unknown routes and wrong methods were all reported as server errors.</div></div></li>
+        <li><span class="hash">0fc584a</span><div><div class="what">Seeder limited to dev</div><div class="why">Every deployment would have created an admin with the public password <code>ChangeMe123!</code>.</div></div></li>
+        <li><span class="hash">1117817</span><div><div class="what">CSRF decision documented</div><div class="why">Disabling it is correct for header tokens, and the comment records the reason and the condition for revisiting it.</div></div></li>
+        <li><span class="hash">c26b7d1</span><div><div class="what">401 when not logged in</div><div class="why">Spring defaulted to 403, which hides the difference between "who are you?" and "not allowed".</div></div></li>
+        <li><span class="hash">76e7e98</span><div><div class="what">Registration race returns 409</div><div class="why">Two simultaneous sign-ups with one email could produce a 500. Live test: 20 at once gave 1 × 201 and 19 × 409.</div></div></li>
+        <li><span class="hash">5d0b1d0</span><div><div class="what">Stable page JSON</div><div class="why">Spring warned that dumping <code>PageImpl</code> internals has no guaranteed shape.</div></div></li>
+      </ol>
+
+      <div class="phase">Production readiness</div>
+      <ol class="timeline">
+        <li><span class="hash">7374791</span><div><div class="what">Real JWT secret required</div><div class="why">Without it, a deployment would sign tokens with a secret published on GitHub, and anyone could forge admin tokens.</div></div></li>
+        <li><span class="hash">9963290</span><div><div class="what">Database credentials moved out of the base config</div><div class="why">The dev password applied to every environment.</div></div></li>
+        <li><span class="hash">c5ea782</span><div><div class="what">Admin bootstrap</div><div class="why">With the seeder dev-only, production had no way to get its first admin.</div></div></li>
+        <li><span class="hash">ef03bc0</span><div><div class="what">Flyway migrations</div><div class="why"><code>ddl-auto: update</code> can't safely evolve a real schema.</div></div></li>
+        <li><span class="hash">bc72ebf</span><div><div class="what">Login rate limiting</div><div class="why">Unlimited password guessing was possible, including against the admin.</div></div></li>
+        <li><span class="hash">4ba8400</span><div><div class="what">Task docs</div><div class="why">The spec and review checklist are now kept in <code>docs/</code>.</div></div></li>
+        <li><span class="hash">a209c07</span><div><div class="what">Postman collection</div><div class="why">23 requests with checks; passes end to end with Newman.</div></div></li>
+      </ol>
+
+      <div class="phase">Documentation</div>
+      <ol class="timeline">
+        <li><span class="hash">2c0b12f</span><div><div class="what">Code comments throughout</div><div class="why">Javadoc on every class and on non-obvious methods, explaining roles and decisions. Comment-only: all 39 Java files compared with comments stripped showed no code changes.</div></div></li>
+        <li><span class="hash">docs/</span><div><div class="what">This handbook in the repo</div><div class="why">Saved as <code>docs/atlasna-catalog-internals.html</code>. Open it in a browser; the diagrams load Mermaid from a CDN.</div></div></li>
+      </ol>
+    </section>
+
+    <!-- 15 -->
+    <section id="run">
+      <h2><span class="n">15</span>Run, test, deploy</h2>
+      <p class="sub">The commands you'll actually use.</p>
+      <pre class="code"><code><span class="c"># local development</span>
+docker compose up -d          <span class="c"># start Postgres</span>
+./mvnw spring-boot:run        <span class="c"># dev profile: migrate, create dev admin, seed products</span>
+./mvnw test                   <span class="c"># all 39 tests, no Docker needed (uses H2)</span>
+docker compose down           <span class="c"># stop Postgres, keep data</span>
+docker compose down -v        <span class="c"># stop and WIPE dev data</span>
+
+<span class="c"># production-style</span>
+./mvnw package
+export ATLASNA_JWT_SECRET="$(openssl rand -base64 48)"
+export SPRING_DATASOURCE_URL=jdbc:postgresql://db-host:5432/atlasna
+export SPRING_DATASOURCE_USERNAME=... SPRING_DATASOURCE_PASSWORD=...
+export ATLASNA_BOOTSTRAP_ADMIN_EMAIL=you@atlasna.dz ATLASNA_BOOTSTRAP_ADMIN_PASSWORD='a-long-strong-password'
+java -jar target/atlasna-catalog-0.0.1-SNAPSHOT.jar</code></pre>
+      <p><strong>Postman:</strong> import <code>docs/postman/atlasna-catalog.postman_collection.json</code> and run the collection. <code>{{baseUrl}}</code> is a collection variable, set to <code>http://localhost:8080</code>.</p>
+    </section>
+
+    <!-- 16 -->
+    <section id="next">
+      <h2><span class="n">16</span>What comes next</h2>
+      <p class="sub">Deliberately left out of Phase 1.</p>
+      <ul>
+        <li><strong>Refresh tokens and logout:</strong> designed together with the frontend, because cookie vs. browser storage changes the CSRF picture.</li>
+        <li><strong>Orders and cart:</strong> new tables via <code>V2__…sql</code>, linking users to products (soft delete already keeps those links valid).</li>
+        <li><strong>Deploy settings:</strong> the real frontend origin in CORS, <code>server.forward-headers-strategy</code> behind a proxy, and a shared rate-limit store if you run more than one instance.</li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<script type="module">
+  // Standalone copy: the Claude artifact viewer renders Mermaid natively; a plain browser needs the library.
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+  const dark = document.documentElement.dataset.theme === "dark" ||
+    (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "neutral", securityLevel: "strict" });
+</script>
+</body>
+</html>
