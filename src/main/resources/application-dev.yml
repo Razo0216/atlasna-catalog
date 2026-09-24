@@ -1,6 +1,13 @@
 # Local development only. Activated by ./mvnw spring-boot:run (see spring-boot-maven-plugin in pom.xml).
 # Every value here is public; never activate the dev profile in a real environment.
 
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/atlasna
+    username: atlasna
+    password: atlasna_dev_password
+    driver-class-name: org.postgresql.Driver
+
 atlasna:
   jwt:
     secret: ${ATLASNA_JWT_SECRET:dev-only-secret-change-me-please-this-must-be-long-and-random}

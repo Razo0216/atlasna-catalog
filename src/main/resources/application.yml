@@ -1,11 +1,8 @@
 spring:
   application:
     name: atlasna-catalog
-  datasource:
-    url: jdbc:postgresql://localhost:5432/atlasna
-    username: atlasna
-    password: atlasna_dev_password
-    driver-class-name: org.postgresql.Driver
+  # Datasource comes from SPRING_DATASOURCE_URL / _USERNAME / _PASSWORD outside dev
+  # (application-dev.yml points at the docker-compose Postgres).
   jpa:
     hibernate:
       ddl-auto: update
