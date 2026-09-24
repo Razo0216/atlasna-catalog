@@ -1,4 +1,4 @@
-package com.atlasna.atlasna_catalog;
+package com.atlasna.catalog;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
