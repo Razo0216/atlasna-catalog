@@ -196,6 +196,30 @@ class ApiIntegrationTests {
         assertThat(userRepository.count()).isEqualTo(2); // admin + jane
     }
 
+    @Test
+    void malformedJsonBodyIsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content("{bad"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void invalidEnumOrIdParameterIsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/products").param("category", "NOPE"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid value 'NOPE' for parameter 'category'"));
+        mockMvc.perform(get("/api/products/abc"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void frameworkErrorsKeepTheirStatusInsteadOf500() throws Exception {
+        mockMvc.perform(get("/api/auth/does-not-exist"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/auth/login"))
+                .andExpect(status().isMethodNotAllowed());
+    }
+
     private ResultActions register(String fullName, String email, String password) throws Exception {
         return mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"fullName\":\"%s\",\"email\":\"%s\",\"password\":\"%s\"}".formatted(fullName, email, password)));
