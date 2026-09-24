@@ -1,0 +1,149 @@
+package com.atlasna.catalog;
+
+import com.atlasna.catalog.product.ProductRepository;
+import com.atlasna.catalog.user.Role;
+import com.atlasna.catalog.user.User;
+import com.atlasna.catalog.user.UserRepository;
+import com.jayway.jsonpath.JsonPath;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+class ApiIntegrationTests {
+
+    private static final String ADMIN_EMAIL = "admin@test.local";
+    private static final String ADMIN_PASSWORD = "AdminPass123";
+    private static final String PRODUCT_JSON =
+            "{\"name\":\"Tea Set\",\"price\":3100.00,\"category\":\"HOME_AND_KITCHEN\",\"stockQuantity\":5}";
+
+    @Autowired MockMvc mockMvc;
+    @Autowired UserRepository userRepository;
+    @Autowired ProductRepository productRepository;
+    @Autowired PasswordEncoder passwordEncoder;
+
+    @BeforeEach
+    void resetData() {
+        productRepository.deleteAll();
+        userRepository.deleteAll();
+        userRepository.save(User.builder()
+                .fullName("Test Admin").email(ADMIN_EMAIL)
+                .passwordHash(passwordEncoder.encode(ADMIN_PASSWORD))
+                .role(Role.ADMIN).build());
+    }
+
+    @Test
+    void productListingIsPublic() throws Exception {
+        mockMvc.perform(get("/api/products"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray());
+    }
+
+    @Test
+    void registerReturnsTokenAndCustomerRole() throws Exception {
+        register("Jane", "jane@example.com", "SuperSecret1")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.user.email").value("jane@example.com"))
+                .andExpect(jsonPath("$.user.role").value("CUSTOMER"));
+
+        User saved = userRepository.findByEmail("jane@example.com").orElseThrow();
+        assertThat(saved.getPasswordHash()).startsWith("$2").isNotEqualTo("SuperSecret1");
+    }
+
+    @Test
+    void registerRejectsInvalidInputWithFieldErrors() throws Exception {
+        register("", "not-an-email", "short")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.fullName").value("Full name is required"))
+                .andExpect(jsonPath("$.fieldErrors.email").value("Email must be valid"))
+                .andExpect(jsonPath("$.fieldErrors.password").value("Password must be at least 8 characters"));
+    }
+
+    @Test
+    void registerRejectsDuplicateEmail() throws Exception {
+        register("Jane", "jane@example.com", "SuperSecret1").andExpect(status().isCreated());
+        register("Jane Again", "jane@example.com", "SuperSecret1").andExpect(status().isConflict());
+    }
+
+    @Test
+    void loginWithWrongPasswordIsUnauthorized() throws Exception {
+        login(ADMIN_EMAIL, "wrong-password")
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid email or password"));
+    }
+
+    @Test
+    void customerCannotCreateProduct() throws Exception {
+        String customerToken = tokenFrom(register("Jane", "jane@example.com", "SuperSecret1"));
+
+        mockMvc.perform(post("/api/products")
+                        .header("Authorization", "Bearer " + customerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
+                .andExpect(status().isForbidden());
+
+        assertThat(productRepository.count()).isZero();
+    }
+
+    @Test
+    void adminCanCreateProduct() throws Exception {
+        String adminToken = tokenFrom(login(ADMIN_EMAIL, ADMIN_PASSWORD));
+
+        mockMvc.perform(post("/api/products")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("Tea Set"))
+                .andExpect(jsonPath("$.category").value("HOME_AND_KITCHEN"))
+                .andExpect(jsonPath("$.stockQuantity").value(5));
+
+        assertThat(productRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void adminDeleteHidesProductFromPublicReads() throws Exception {
+        String adminToken = tokenFrom(login(ADMIN_EMAIL, ADMIN_PASSWORD));
+        String created = mockMvc.perform(post("/api/products")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
+                .andReturn().getResponse().getContentAsString();
+        Number id = JsonPath.read(created, "$.id");
+
+        mockMvc.perform(delete("/api/products/" + id).header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/products/" + id)).andExpect(status().isNotFound());
+        assertThat(productRepository.findById(id.longValue())).hasValueSatisfying(p -> assertThat(p.isActive()).isFalse());
+    }
+
+    private ResultActions register(String fullName, String email, String password) throws Exception {
+        return mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fullName\":\"%s\",\"email\":\"%s\",\"password\":\"%s\"}".formatted(fullName, email, password)));
+    }
+
+    private ResultActions login(String email, String password) throws Exception {
+        return mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"%s\",\"password\":\"%s\"}".formatted(email, password)));
+    }
+
+    private String tokenFrom(ResultActions result) throws Exception {
+        return JsonPath.read(result.andReturn().getResponse().getContentAsString(), "$.accessToken");
+    }
+}
