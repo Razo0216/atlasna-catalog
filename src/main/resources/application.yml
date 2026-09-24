@@ -14,6 +14,12 @@ spring:
       hibernate:
         format_sql: true
     open-in-view: false
+  data:
+    web:
+      pageable:
+        # Serialize Page responses as a stable {content, page:{size,number,totalElements,totalPages}}
+        # DTO instead of Jackson-dumping PageImpl internals (whose shape isn't guaranteed).
+        serialization-mode: via-dto
 
 server:
   port: 8080

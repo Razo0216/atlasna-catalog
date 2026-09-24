@@ -1,6 +1,8 @@
 package com.atlasna.catalog;
 
 import com.atlasna.catalog.config.DataSeeder;
+import com.atlasna.catalog.product.Category;
+import com.atlasna.catalog.product.Product;
 import com.atlasna.catalog.product.ProductRepository;
 import com.atlasna.catalog.user.Role;
 import com.atlasna.catalog.user.User;
@@ -21,6 +23,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -65,6 +68,23 @@ class ApiIntegrationTests {
         mockMvc.perform(get("/api/products"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray());
+    }
+
+    @Test
+    void productListingUsesStablePageShape() throws Exception {
+        productRepository.save(Product.builder().name("A").price(BigDecimal.ONE)
+                .category(Category.BOOKS).stockQuantity(1).build());
+        productRepository.save(Product.builder().name("B").price(BigDecimal.TEN)
+                .category(Category.BOOKS).stockQuantity(1).build());
+
+        mockMvc.perform(get("/api/products").param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.page.size").value(1))
+                .andExpect(jsonPath("$.page.number").value(0))
+                .andExpect(jsonPath("$.page.totalElements").value(2))
+                .andExpect(jsonPath("$.page.totalPages").value(2))
+                .andExpect(jsonPath("$.pageable").doesNotExist());
     }
 
     @Test
