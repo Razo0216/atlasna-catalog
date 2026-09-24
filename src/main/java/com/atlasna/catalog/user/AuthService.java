@@ -8,6 +8,7 @@ import com.atlasna.catalog.user.dto.LoginRequest;
 import com.atlasna.catalog.user.dto.RegisterRequest;
 import com.atlasna.catalog.user.dto.UserResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -36,7 +37,14 @@ public class AuthService {
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .role(Role.CUSTOMER)
                 .build();
-        userRepository.save(user);
+        try {
+            // Flush now so a unique-constraint violation surfaces here rather than at commit.
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            // The existsByEmail check above can race with a concurrent registration of the
+            // same email; the email unique constraint is the real guard.
+            throw new EmailAlreadyInUseException(email);
+        }
         return buildAuthResponse(user);
     }
 
