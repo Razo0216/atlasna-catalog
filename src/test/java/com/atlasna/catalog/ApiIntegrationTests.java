@@ -5,9 +5,12 @@ import com.atlasna.catalog.user.Role;
 import com.atlasna.catalog.user.User;
 import com.atlasna.catalog.user.UserRepository;
 import com.jayway.jsonpath.JsonPath;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
@@ -15,6 +18,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -37,6 +45,7 @@ class ApiIntegrationTests {
     @Autowired UserRepository userRepository;
     @Autowired ProductRepository productRepository;
     @Autowired PasswordEncoder passwordEncoder;
+    @Value("${atlasna.jwt.secret}") String jwtSecret;
 
     @BeforeEach
     void resetData() {
@@ -131,6 +140,42 @@ class ApiIntegrationTests {
 
         mockMvc.perform(get("/api/products/" + id)).andExpect(status().isNotFound());
         assertThat(productRepository.findById(id.longValue())).hasValueSatisfying(p -> assertThat(p.isActive()).isFalse());
+    }
+
+    @Test
+    void malformedTokenDoesNotBreakPublicEndpoints() throws Exception {
+        mockMvc.perform(get("/api/products").header("Authorization", "Bearer not.a.jwt"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/products").header("Authorization", "Bearer not.a.jwt")
+                        .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
+                .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void expiredTokenIsTreatedAsAnonymous() throws Exception {
+        Instant past = Instant.now().minus(2, ChronoUnit.HOURS);
+        String expired = Jwts.builder()
+                .subject(ADMIN_EMAIL)
+                .issuedAt(Date.from(past))
+                .expiration(Date.from(past.plus(1, ChronoUnit.HOURS)))
+                .signWith(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
+                .compact();
+
+        mockMvc.perform(get("/api/products").header("Authorization", "Bearer " + expired))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/products").header("Authorization", "Bearer " + expired)
+                        .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
+                .andExpect(status().is4xxClientError());
+        assertThat(productRepository.count()).isZero();
+    }
+
+    @Test
+    void tokenForDeletedUserIsTreatedAsAnonymous() throws Exception {
+        String token = tokenFrom(register("Jane", "jane@example.com", "SuperSecret1"));
+        userRepository.delete(userRepository.findByEmail("jane@example.com").orElseThrow());
+
+        mockMvc.perform(get("/api/products").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
     }
 
     private ResultActions register(String fullName, String email, String password) throws Exception {
