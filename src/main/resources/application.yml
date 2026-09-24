@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: atlasna-catalog
+  datasource:
+    url: jdbc:postgresql://localhost:5432/atlasna
+    username: atlasna
+    password: atlasna_dev_password
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+server:
+  port: 8080
+
+atlasna:
+  jwt:
+    secret: ${ATLASNA_JWT_SECRET:dev-only-secret-change-me-please-this-must-be-long-and-random}
+    expiration-minutes: 60
+
+logging:
+  level:
+    com.atlasna: DEBUG
+    org.springframework.security: INFO
