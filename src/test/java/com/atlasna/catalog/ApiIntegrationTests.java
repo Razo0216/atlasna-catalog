@@ -1,5 +1,6 @@
 package com.atlasna.catalog;
 
+import com.atlasna.catalog.config.DataSeeder;
 import com.atlasna.catalog.product.ProductRepository;
 import com.atlasna.catalog.user.Role;
 import com.atlasna.catalog.user.User;
@@ -13,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -45,6 +47,7 @@ class ApiIntegrationTests {
     @Autowired UserRepository userRepository;
     @Autowired ProductRepository productRepository;
     @Autowired PasswordEncoder passwordEncoder;
+    @Autowired ApplicationContext applicationContext;
     @Value("${atlasna.jwt.secret}") String jwtSecret;
 
     @BeforeEach
@@ -218,6 +221,11 @@ class ApiIntegrationTests {
                 .andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/auth/login"))
                 .andExpect(status().isMethodNotAllowed());
+    }
+
+    @Test
+    void devSeederDoesNotRunOutsideDevProfile() {
+        assertThat(applicationContext.getBeansOfType(DataSeeder.class)).isEmpty();
     }
 
     private ResultActions register(String fullName, String email, String password) throws Exception {

@@ -9,13 +9,21 @@ import com.atlasna.catalog.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.List;
 
+/**
+ * Local-development seed data only. Active under the "dev" profile, which
+ * `./mvnw spring-boot:run` enables via the spring-boot-maven-plugin config in pom.xml.
+ * A packaged jar never runs this unless "dev" is explicitly activated, so the
+ * well-known admin password below can never reach a real environment by default.
+ */
 @Component
+@Profile("dev")
 @RequiredArgsConstructor
 @Slf4j
 public class DataSeeder implements CommandLineRunner {
