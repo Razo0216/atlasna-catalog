@@ -1,5 +1,6 @@
 package com.atlasna.catalog.security;
 
+import com.atlasna.catalog.user.User;
 import com.atlasna.catalog.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -15,7 +16,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmail(User.normalizeEmail(email))
                 .orElseThrow(() -> new UsernameNotFoundException("No user with email: " + email));
     }
 }

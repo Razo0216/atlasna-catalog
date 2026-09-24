@@ -13,6 +13,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 
 @Entity
 @Table(name = "users", uniqueConstraints = @UniqueConstraint(columnNames = "email"))
@@ -50,6 +51,11 @@ public class User implements UserDetails {
     @PrePersist
     void onCreate() {
         this.createdAt = Instant.now();
+    }
+
+    /** Emails are stored and looked up in this canonical form so login is case-insensitive. */
+    public static String normalizeEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 
     @Override

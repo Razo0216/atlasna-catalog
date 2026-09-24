@@ -178,6 +178,24 @@ class ApiIntegrationTests {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void mixedCaseEmailCanLogInExactlyAsRegistered() throws Exception {
+        register("Jane", "Jane@Example.com", "SuperSecret1")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.user.email").value("jane@example.com"));
+
+        login("Jane@Example.com", "SuperSecret1").andExpect(status().isOk());
+        login("jane@example.com", "SuperSecret1").andExpect(status().isOk());
+        login("JANE@EXAMPLE.COM", "SuperSecret1").andExpect(status().isOk());
+    }
+
+    @Test
+    void duplicateEmailInDifferentCaseIsConflictNotServerError() throws Exception {
+        register("Jane", "jane@example.com", "SuperSecret1").andExpect(status().isCreated());
+        register("Jane Again", "JANE@example.com", "SuperSecret1").andExpect(status().isConflict());
+        assertThat(userRepository.count()).isEqualTo(2); // admin + jane
+    }
+
     private ResultActions register(String fullName, String email, String password) throws Exception {
         return mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"fullName\":\"%s\",\"email\":\"%s\",\"password\":\"%s\"}".formatted(fullName, email, password)));

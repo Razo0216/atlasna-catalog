@@ -26,12 +26,13 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
-            throw new EmailAlreadyInUseException(request.email());
+        String email = User.normalizeEmail(request.email());
+        if (userRepository.existsByEmail(email)) {
+            throw new EmailAlreadyInUseException(email);
         }
         User user = User.builder()
                 .fullName(request.fullName())
-                .email(request.email().toLowerCase())
+                .email(email)
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .role(Role.CUSTOMER)
                 .build();
@@ -40,13 +41,14 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
+        String email = User.normalizeEmail(request.email());
         try {
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.email(), request.password()));
+                    new UsernamePasswordAuthenticationToken(email, request.password()));
         } catch (BadCredentialsException e) {
             throw new InvalidCredentialsException();
         }
-        User user = userRepository.findByEmail(request.email().toLowerCase())
+        User user = userRepository.findByEmail(email)
                 .orElseThrow(InvalidCredentialsException::new);
         return buildAuthResponse(user);
     }
