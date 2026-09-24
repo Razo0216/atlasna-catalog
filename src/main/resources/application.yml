@@ -26,7 +26,8 @@ server:
 
 atlasna:
   jwt:
-    secret: ${ATLASNA_JWT_SECRET:dev-only-secret-change-me-please-this-must-be-long-and-random}
+    # No default: startup fails unless ATLASNA_JWT_SECRET is set (application-dev.yml supplies one for local dev).
+    secret: ${ATLASNA_JWT_SECRET:}
     expiration-minutes: 60
 
 logging:
