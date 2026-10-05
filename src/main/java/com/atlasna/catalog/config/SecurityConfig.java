@@ -73,13 +73,21 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        // Defence in depth: admin controllers also carry @PreAuthorize("hasRole('ADMIN')").
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 // Unauthenticated access to a protected endpoint -> 401 with the same ApiError
                 // body as every other error, via GlobalExceptionHandler.
-                .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) ->
-                        exceptionResolver.resolveException(request, response, null, authException)))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) ->
+                                exceptionResolver.resolveException(request, response, null, authException))
+                        // Wrong role on a URL rule (e.g. CUSTOMER on /api/admin/**) -> same 403 ApiError body
+                        // as a @PreAuthorize denial, instead of Spring's default error page.
+                        .accessDeniedHandler((request, response, accessDeniedException) ->
+                                exceptionResolver.resolveException(request, response, null, accessDeniedException)))
                 .authenticationProvider(authenticationProvider())
                 // Read the JWT and establish the user before Spring's own authentication filters run.
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

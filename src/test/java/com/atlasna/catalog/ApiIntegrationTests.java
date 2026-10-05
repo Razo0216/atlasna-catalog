@@ -1,9 +1,7 @@
 package com.atlasna.catalog;
 
 import com.atlasna.catalog.config.DataSeeder;
-import com.atlasna.catalog.product.Category;
-import com.atlasna.catalog.product.Product;
-import com.atlasna.catalog.product.ProductRepository;
+import com.atlasna.catalog.product.domain.ProductRepository;
 import com.atlasna.catalog.security.LoginRateLimiter;
 import com.atlasna.catalog.user.Role;
 import com.atlasna.catalog.user.User;
@@ -22,7 +20,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -41,16 +38,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Flyway-built PostgreSQL in a Testcontainers container) driven through MockMvc, with no real server.
  *
  * <p>Each test starts from a clean state: all users and products are deleted, one ADMIN is created,
- * and the login rate limiter is cleared. Covers registration, login, 401 vs 403 rules, product CRUD,
- * soft delete, bad or expired tokens, email case handling, error mapping, page format and rate limits.
+ * and the login rate limiter is cleared. Covers registration, login, 401 vs 403 rules,
+ * bad or expired tokens, email case handling, error mapping and rate limits. Catalog behaviour is in CatalogApiTests.
  */
 @AutoConfigureMockMvc
 class ApiIntegrationTests extends PostgresIntegrationTest {
 
     private static final String ADMIN_EMAIL = "admin@test.local";
     private static final String ADMIN_PASSWORD = "AdminPass123";
-    private static final String PRODUCT_JSON =
-            "{\"name\":\"Tea Set\",\"price\":3100.00,\"category\":\"HOME_AND_KITCHEN\",\"stockQuantity\":5}";
+    /** Any body: these tests only care that the request is refused before validation. */
+    private static final String PRODUCT_JSON = "{}";
+    private static final String ADMIN_PRODUCTS = "/api/admin/products";
 
     @Autowired MockMvc mockMvc;
     @Autowired UserRepository userRepository;
@@ -69,30 +67,6 @@ class ApiIntegrationTests extends PostgresIntegrationTest {
                 .fullName("Test Admin").email(ADMIN_EMAIL)
                 .passwordHash(passwordEncoder.encode(ADMIN_PASSWORD))
                 .role(Role.ADMIN).build());
-    }
-
-    @Test
-    void productListingIsPublic() throws Exception {
-        mockMvc.perform(get("/api/products"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").isArray());
-    }
-
-    @Test
-    void productListingUsesStablePageShape() throws Exception {
-        productRepository.save(Product.builder().name("A").price(BigDecimal.ONE)
-                .category(Category.BOOKS).stockQuantity(1).build());
-        productRepository.save(Product.builder().name("B").price(BigDecimal.TEN)
-                .category(Category.BOOKS).stockQuantity(1).build());
-
-        mockMvc.perform(get("/api/products").param("size", "1"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content.length()").value(1))
-                .andExpect(jsonPath("$.page.size").value(1))
-                .andExpect(jsonPath("$.page.number").value(0))
-                .andExpect(jsonPath("$.page.totalElements").value(2))
-                .andExpect(jsonPath("$.page.totalPages").value(2))
-                .andExpect(jsonPath("$.pageable").doesNotExist());
     }
 
     @Test
@@ -131,51 +105,8 @@ class ApiIntegrationTests extends PostgresIntegrationTest {
     }
 
     @Test
-    void customerCannotCreateProduct() throws Exception {
-        String customerToken = tokenFrom(register("Jane", "jane@example.com", "SuperSecret1"));
-
-        mockMvc.perform(post("/api/products")
-                        .header("Authorization", "Bearer " + customerToken)
-                        .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
-                .andExpect(status().isForbidden());
-
-        assertThat(productRepository.count()).isZero();
-    }
-
-    @Test
-    void adminCanCreateProduct() throws Exception {
-        String adminToken = tokenFrom(login(ADMIN_EMAIL, ADMIN_PASSWORD));
-
-        mockMvc.perform(post("/api/products")
-                        .header("Authorization", "Bearer " + adminToken)
-                        .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.name").value("Tea Set"))
-                .andExpect(jsonPath("$.category").value("HOME_AND_KITCHEN"))
-                .andExpect(jsonPath("$.stockQuantity").value(5));
-
-        assertThat(productRepository.count()).isEqualTo(1);
-    }
-
-    @Test
-    void adminDeleteHidesProductFromPublicReads() throws Exception {
-        String adminToken = tokenFrom(login(ADMIN_EMAIL, ADMIN_PASSWORD));
-        String created = mockMvc.perform(post("/api/products")
-                        .header("Authorization", "Bearer " + adminToken)
-                        .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
-                .andReturn().getResponse().getContentAsString();
-        Number id = JsonPath.read(created, "$.id");
-
-        mockMvc.perform(delete("/api/products/" + id).header("Authorization", "Bearer " + adminToken))
-                .andExpect(status().isNoContent());
-
-        mockMvc.perform(get("/api/products/" + id)).andExpect(status().isNotFound());
-        assertThat(productRepository.findById(id.longValue())).hasValueSatisfying(p -> assertThat(p.isActive()).isFalse());
-    }
-
-    @Test
     void missingTokenOnProtectedEndpointIsUnauthorizedWithJsonBody() throws Exception {
-        mockMvc.perform(post("/api/products").contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
+        mockMvc.perform(post(ADMIN_PRODUCTS).contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.message").value("Authentication is required to access this resource"));
@@ -186,7 +117,7 @@ class ApiIntegrationTests extends PostgresIntegrationTest {
     void malformedTokenDoesNotBreakPublicEndpoints() throws Exception {
         mockMvc.perform(get("/api/products").header("Authorization", "Bearer not.a.jwt"))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/products").header("Authorization", "Bearer not.a.jwt")
+        mockMvc.perform(post(ADMIN_PRODUCTS).header("Authorization", "Bearer not.a.jwt")
                         .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
                 .andExpect(status().isUnauthorized());
     }
@@ -203,7 +134,7 @@ class ApiIntegrationTests extends PostgresIntegrationTest {
 
         mockMvc.perform(get("/api/products").header("Authorization", "Bearer " + expired))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/products").header("Authorization", "Bearer " + expired)
+        mockMvc.perform(post(ADMIN_PRODUCTS).header("Authorization", "Bearer " + expired)
                         .contentType(MediaType.APPLICATION_JSON).content(PRODUCT_JSON))
                 .andExpect(status().isUnauthorized());
         assertThat(productRepository.count()).isZero();
@@ -245,9 +176,9 @@ class ApiIntegrationTests extends PostgresIntegrationTest {
 
     @Test
     void invalidEnumOrIdParameterIsBadRequest() throws Exception {
-        mockMvc.perform(get("/api/products").param("category", "NOPE"))
+        mockMvc.perform(get("/api/products").param("type", "NOPE"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Invalid value 'NOPE' for parameter 'category'"));
+                .andExpect(jsonPath("$.message").value("Invalid value 'NOPE' for parameter 'type'"));
         mockMvc.perform(get("/api/products/abc"))
                 .andExpect(status().isBadRequest());
     }

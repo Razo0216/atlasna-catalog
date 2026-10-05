@@ -1,4 +1,4 @@
-package com.atlasna.catalog.product;
+package com.atlasna.catalog.product.domain;
 
 /** What the public API shows instead of the exact stock quantity. */
 public enum Availability {

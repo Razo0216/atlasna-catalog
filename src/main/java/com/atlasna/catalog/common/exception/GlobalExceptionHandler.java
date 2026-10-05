@@ -5,6 +5,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
@@ -72,6 +73,26 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
                 .body(ApiError.of(HttpStatus.TOO_MANY_REQUESTS.value(), "Too Many Requests", ex.getMessage()));
+    }
+
+    /** Business errors thrown by services: status, message and (for 400) field errors come from the exception. */
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ApiError> handleApiException(ApiException ex) {
+        HttpStatus status = ex.getStatus();
+        ApiError body = ex.getFieldErrors() == null
+                ? ApiError.of(status.value(), status.getReasonPhrase(), ex.getMessage())
+                : ApiError.ofFieldErrors(status.value(), "Validation Failed", ex.getMessage(), ex.getFieldErrors());
+        return ResponseEntity.status(status).body(body);
+    }
+
+    /**
+     * 409: two admins edited the same product at once and this write lost the race (the row's version changed
+     * between read and write). The client should reload and retry.
+     */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of(HttpStatus.CONFLICT.value(), "Conflict",
+                "This record was changed by someone else. Reload it and try again."));
     }
 
     /** 404: the requested entity doesn't exist or has been soft-deleted. */
