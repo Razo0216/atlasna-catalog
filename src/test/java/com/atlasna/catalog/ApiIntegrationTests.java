@@ -15,12 +15,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -40,16 +38,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * End-to-end tests of the HTTP API: the full Spring context (security filters, controllers, services,
- * Flyway-built H2 database) driven through MockMvc, with no real server or Postgres needed.
+ * Flyway-built PostgreSQL in a Testcontainers container) driven through MockMvc, with no real server.
  *
  * <p>Each test starts from a clean state: all users and products are deleted, one ADMIN is created,
  * and the login rate limiter is cleared. Covers registration, login, 401 vs 403 rules, product CRUD,
  * soft delete, bad or expired tokens, email case handling, error mapping, page format and rate limits.
  */
-@SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
-class ApiIntegrationTests {
+class ApiIntegrationTests extends PostgresIntegrationTest {
 
     private static final String ADMIN_EMAIL = "admin@test.local";
     private static final String ADMIN_PASSWORD = "AdminPass123";
