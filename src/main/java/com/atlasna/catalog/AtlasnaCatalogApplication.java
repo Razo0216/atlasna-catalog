@@ -1,6 +1,7 @@
 package com.atlasna.catalog;
 
 import com.atlasna.catalog.config.AdminBootstrapProperties;
+import com.atlasna.catalog.config.StoreProperties;
 import com.atlasna.catalog.security.JwtProperties;
 import com.atlasna.catalog.security.LoginRateLimitProperties;
 import org.springframework.boot.SpringApplication;
@@ -23,7 +24,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  * {@code atlasna.*} keys from application*.yml and environment variables.
  */
 @SpringBootApplication
-@EnableConfigurationProperties({JwtProperties.class, AdminBootstrapProperties.class, LoginRateLimitProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, AdminBootstrapProperties.class, LoginRateLimitProperties.class,
+        StoreProperties.class})
 public class AtlasnaCatalogApplication {
     public static void main(String[] args) {
         SpringApplication.run(AtlasnaCatalogApplication.class, args);

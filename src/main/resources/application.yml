@@ -27,6 +27,11 @@ atlasna:
     # No default: startup fails unless ATLASNA_JWT_SECRET is set (application-dev.yml supplies one for local dev).
     secret: ${ATLASNA_JWT_SECRET:}
     expiration-minutes: 60
+  # Store rules — placeholder defaults the owner must confirm (see StoreProperties).
+  store:
+    max-item-weight-grams: 5000      # heavier single items (25 kg flour, water packs) are not sold
+    max-line-quantity-unit: 20       # pieces of one product per order line
+    max-line-quantity-weight: 10     # kg of one per-kg product per order line
 
 logging:
   level:
