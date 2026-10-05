@@ -94,7 +94,7 @@ import { z } from 'zod'
 export const localizedTextSchema = z.object({ fr: z.string(), ar: z.string().nullable() })
 export const nullableLocalizedSchema = z.object({ fr: z.string().nullable(), ar: z.string().nullable() })
 
-export const CATEGORY_TYPES = ['GROCERY', 'BEAUTY']
+export const CATEGORY_TYPES = ['GROCERY', 'BEAUTY'] as const   // without `as const` z.infer widens to string
 export const categoryTypeSchema = z.enum(CATEGORY_TYPES)
 
 export const categoryNodeSchema = z.object({

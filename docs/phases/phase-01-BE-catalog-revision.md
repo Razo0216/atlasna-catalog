@@ -254,6 +254,7 @@ Build the tree in memory (one query, group by parent) — do not lazy-load child
   `unitWeightGrams`, `stockQuantity` (**`BigDecimal`**, `NUMERIC(10,3)`), `lowStockThreshold`, `perishable`, `featured`, `active`.
 - `@ManyToOne(fetch = LAZY) Category category`.
 - `@JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition = "jsonb") Map<String,Object> attributes` (Hibernate 7 maps JSON → `jsonb` on PostgreSQL; with `ddl-auto=validate` a mismatch fails at startup — good).
+  **Verify:** Boot 4 ships Jackson 3 (`tools.jackson`); check which JSON `FormatMapper` the resolved Hibernate 7 uses and that a JSONB round-trip works (test 1 + a repository test that saves and reloads `attributes`).
 - `@Version Long version` (optimistic locking). `@OneToMany(mappedBy="product", cascade=ALL, orphanRemoval=true) @OrderBy("sortOrder") List<ProductImage> images`.
 - No `@Data`, no Lombok `equals/hashCode` on entities.
 
@@ -288,6 +289,10 @@ children or products (`409`); slug unique (`SLUG_CONFLICT`).
   Duplicate email → `409 EMAIL_ALREADY_IN_USE`; duplicate phone → `409 PHONE_ALREADY_IN_USE` (check first **and** map the unique-index violation, because two requests can race).
 - `UserResponse` gains `phone`. `GET /api/auth/me` returns the current `UserResponse` (re-reads the DB, so role changes show up).
 - Login: a **disabled** account currently falls through to a generic 401. Catch `DisabledException` → `401 ACCOUNT_DISABLED` (only after the password matched).
+  ⚠️ By default `DaoAuthenticationProvider` runs the enabled/locked checks in its **pre**-authentication checks — *before* comparing the password —
+  so a naive catch reports `ACCOUNT_DISABLED` to someone with the wrong password (account-state leak; test 16 fails). Move the account-status
+  checks to run after the password check (e.g. `setPreAuthenticationChecks(user -> {})` and a `setPostAuthenticationChecks(...)` that throws
+  `DisabledException`/`LockedException`); verify the setter names against the installed Spring Security 7 jar.
 - Give `LoginRequest` explicit validation messages like `RegisterRequest`.
 
 ### Step 7 — Errors with stable codes
