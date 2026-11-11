@@ -73,7 +73,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         if (userEmail != null && notAlreadyAuthenticated) {
             UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
-            if (jwtService.isTokenValid(token, userDetails)) {
+            // A disabled account's tokens stop working at once, not only at their expiry.
+            if (userDetails.isEnabled() && jwtService.isTokenValid(token, userDetails)) {
                 // Credentials are null: the token has already been verified, and the password isn't needed again.
                 var authToken = new UsernamePasswordAuthenticationToken(
                         userDetails, null, userDetails.getAuthorities());

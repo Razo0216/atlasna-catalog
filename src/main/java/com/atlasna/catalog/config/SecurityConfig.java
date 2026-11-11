@@ -3,9 +3,11 @@ package com.atlasna.catalog.config;
 import com.atlasna.catalog.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AccountStatusUserDetailsChecker;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -50,6 +52,10 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
     private final JwtAuthFilter jwtAuthFilter;
 
+    /** Browser origins allowed to call the API (comma-separated in config). */
+    @Value("${atlasna.cors.allowed-origins:http://localhost:5173,http://localhost:3000}")
+    private List<String> allowedOrigins;
+
     /**
      * The filter chain every request passes through.
      *
@@ -71,15 +77,23 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // Checked top to bottom; the first match wins, so the catch-all must stay last.
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        // Defence in depth: admin controllers also carry @PreAuthorize("hasRole('ADMIN')").
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 // Unauthenticated access to a protected endpoint -> 401 with the same ApiError
                 // body as every other error, via GlobalExceptionHandler.
-                .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) ->
-                        exceptionResolver.resolveException(request, response, null, authException)))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) ->
+                                exceptionResolver.resolveException(request, response, null, authException))
+                        // Wrong role on a URL rule (e.g. CUSTOMER on /api/admin/**) -> same 403 ApiError body
+                        // as a @PreAuthorize denial, instead of Spring's default error page.
+                        .accessDeniedHandler((request, response, accessDeniedException) ->
+                                exceptionResolver.resolveException(request, response, null, accessDeniedException)))
                 .authenticationProvider(authenticationProvider())
                 // Read the JWT and establish the user before Spring's own authentication filters run.
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
@@ -91,6 +105,12 @@ public class SecurityConfig {
     public DaoAuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
         provider.setPasswordEncoder(passwordEncoder());
+        // By default the disabled/locked checks run BEFORE the password is compared, so a wrong password on a
+        // disabled account would answer ACCOUNT_DISABLED and reveal that the account exists. Run them only
+        // after the password matched; before that, every failure is the same INVALID_CREDENTIALS.
+        AccountStatusUserDetailsChecker accountStatusChecks = new AccountStatusUserDetailsChecker();
+        provider.setPreAuthenticationChecks(user -> { });
+        provider.setPostAuthenticationChecks(accountStatusChecks);
         return provider;
     }
 
@@ -108,17 +128,19 @@ public class SecurityConfig {
 
     /**
      * Which browser origins may call this API. Only affects browsers (Postman and curl ignore CORS).
-     * Add the real frontend domain here when deploying.
+     * Origins come from {@code atlasna.cors.allowed-origins}; add the real frontend domain there when deploying.
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:3000"));
+        config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key"));
         // Lets the frontend read the login lockout countdown cross-origin.
         config.setExposedHeaders(List.of("Retry-After"));
-        config.setAllowCredentials(true);
+        // Bearer tokens travel in a header, never in cookies, so the browser must not send credentials.
+        // Revisit (together with CSRF) only if cookies are ever introduced.
+        config.setAllowCredentials(false);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;

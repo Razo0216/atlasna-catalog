@@ -45,6 +45,14 @@ public class User implements UserDetails {
     @Column(nullable = false, unique = true)
     private String email;
 
+    /**
+     * Contact number for delivery, stored as {@code +213XXXXXXXXX} (see PhoneNumbers). Nullable in the database
+     * because accounts created before V2 and the bootstrap admin have none; required at registration.
+     * Unique when present (partial index {@code ux_users_phone}).
+     */
+    @Column(length = 16)
+    private String phone;
+
     /** BCrypt hash of the password. The plain password is never stored. */
     @Column(nullable = false)
     private String passwordHash;
