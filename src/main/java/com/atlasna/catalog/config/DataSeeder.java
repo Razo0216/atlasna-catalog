@@ -32,10 +32,16 @@ public class DataSeeder implements CommandLineRunner {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final ProductService productService;
+    private final DemoProductImages demoProductImages;
 
     @Override
     public void run(String... args) {
-        if (productRepository.count() > 0) return; // idempotent: restarting never duplicates
+        if (productRepository.count() == 0) seedProducts(); // idempotent: restarting never duplicates
+        // Also runs on an existing dev database, so catalogs seeded before photos existed get them too.
+        demoProductImages.attachMissing();
+    }
+
+    private void seedProducts() {
         List<ProductRequest> products = List.of(
                 weight("fruits-legumes", "Tomates", "طماطم", "80", "42.5", true, true, Map.of("origin", "DZ")),
                 weight("fruits-legumes", "Pommes de terre", "بطاطا", "60", "120", false, false, Map.of("origin", "DZ")),

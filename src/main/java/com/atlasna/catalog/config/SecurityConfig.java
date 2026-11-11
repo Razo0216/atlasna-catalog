@@ -80,6 +80,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
+                        // Product photos (static files until object storage arrives in Phase 5).
+                        .requestMatchers(HttpMethod.GET, "/media/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         // Defence in depth: admin controllers also carry @PreAuthorize("hasRole('ADMIN')").
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
