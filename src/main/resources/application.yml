@@ -18,6 +18,12 @@ spring:
         # Serialize Page responses as a stable {content, page:{size,number,totalElements,totalPages}}
         # DTO instead of Jackson-dumping PageImpl internals (whose shape isn't guaranteed).
         serialization-mode: via-dto
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # Product photos never change in place (a new photo gets a new key), so browsers may cache them.
+          max-age: 7d
 
 server:
   port: 8080

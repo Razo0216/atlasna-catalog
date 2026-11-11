@@ -33,6 +33,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -54,6 +56,7 @@ class CatalogApiTests extends PostgresIntegrationTest {
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired JwtService jwtService;
     @Autowired EntityManagerFactory entityManagerFactory;
+    @Autowired com.atlasna.catalog.config.DemoProductImages demoProductImages;
 
     String adminToken;
     String customerToken;
@@ -461,6 +464,35 @@ class CatalogApiTests extends PostgresIntegrationTest {
         // size=100 so the count query is skipped in both cases (fewer results than the page size).
         mockMvc.perform(get("/api/products").param("size", "100")).andExpect(status().isOk());
         return stats.getPrepareStatementCount();
+    }
+
+    // ---------------------------------------------------------------- demo product photos
+
+    @Test
+    void productPhotosArePublicCacheableStaticFiles() throws Exception {
+        mockMvc.perform(get("/media/products/tomates.webp"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("image/webp"))
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("max-age=604800")));
+    }
+
+    @Test
+    void everyMappedDemoPhotoExistsAsAFile() {
+        for (String slug : com.atlasna.catalog.config.DemoProductImages.PHOTOS.keySet()) {
+            assertThat(getClass().getResource("/static/media/products/" + slug + ".webp")).as(slug).isNotNull();
+        }
+    }
+
+    @Test
+    void demoPhotosAttachOnceAndAppearInTheProductResponse() throws Exception {
+        createWeight("fruits-legumes", "Tomates", "طماطم", "80", "40", "");
+        assertThat(demoProductImages.attachMissing()).isEqualTo(1);
+        assertThat(demoProductImages.attachMissing()).isZero(); // idempotent
+        mockMvc.perform(get("/api/products/by-slug/tomates"))
+                .andExpect(jsonPath("$.images.length()").value(1))
+                .andExpect(jsonPath("$.images[0].url").value("/media/products/tomates.webp"))
+                .andExpect(jsonPath("$.images[0].alt.fr").value("Tomates rouges bien mûres"))
+                .andExpect(jsonPath("$.images[0].alt.ar").value("طماطم حمراء ناضجة"));
     }
 
     private long createUnit(String categorySlug, String nameFr, String price, int weightGrams, String stock, String extra) throws Exception {
