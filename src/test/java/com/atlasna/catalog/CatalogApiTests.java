@@ -111,7 +111,8 @@ class CatalogApiTests extends PostgresIntegrationTest {
         hair.setActive(false);
         categoryRepository.save(hair);
 
-        mockMvc.perform(get("/api/products/" + id)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/products/" + id)).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PRODUCT_NOT_FOUND"));
         mockMvc.perform(get("/api/products")).andExpect(jsonPath("$.page.totalElements").value(0));
     }
 
@@ -139,12 +140,14 @@ class CatalogApiTests extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.fieldErrors.parentId").value("Categories can only be two levels deep"));
         adminCategory(post("/api/admin/categories"),
                 "{\"slug\":\"fruits-legumes\",\"parentId\":%d,\"type\":\"GROCERY\",\"name\":{\"fr\":\"Test dup\"}}".formatted(epicerie))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SLUG_CONFLICT"));
 
         // A category with products, or with children, can't be deleted; an empty one can.
         createUnit("fruits-legumes", "Pommes", "200", 1000, "5", "");
         mockMvc.perform(delete("/api/admin/categories/" + fruits).header("Authorization", bearer(adminToken)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CATEGORY_IN_USE"));
         mockMvc.perform(delete("/api/admin/categories/" + epicerie).header("Authorization", bearer(adminToken)))
                 .andExpect(status().isConflict());
         mockMvc.perform(delete("/api/admin/categories/" + newId).header("Authorization", bearer(adminToken)))
@@ -215,7 +218,7 @@ class CatalogApiTests extends PostgresIntegrationTest {
         for (String bad : List.of("nope", "passwordHash,asc", "price", "price,asc;drop", "stockQuantity,desc")) {
             mockMvc.perform(get("/api/products").param("sort", bad))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.status").value(400));
+                    .andExpect(jsonPath("$.code").value("INVALID_SORT"));
         }
     }
 
@@ -238,6 +241,7 @@ class CatalogApiTests extends PostgresIntegrationTest {
     void heavyItemsAreRejected() throws Exception {
         adminCreate(unitJson("epicerie-salee", "Sac de farine 25 kg", "2500", 6000, "5", ""))
                 .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("PRODUCT_TOO_HEAVY"))
                 .andExpect(jsonPath("$.message").value("Items heavier than 5000 g per unit are not sold"));
         adminCreate(unitJson("epicerie-salee", "Farine 5 kg", "900", 5000, "5", ""))
                 .andExpect(status().isCreated());
@@ -249,9 +253,11 @@ class CatalogApiTests extends PostgresIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.quantityStep").exists());
         adminCreate(json("epicerie", "Pâtes", null, "100", "UNIT", "1", 500, "5", ""))       // a department, not a leaf
-                .andExpect(status().isUnprocessableContent());
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("CATEGORY_NOT_LEAF"));
         adminCreate(jsonWithCategoryId(999_999L, "Pâtes"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CATEGORY_NOT_FOUND"));
         adminCreate(unitJson("epicerie-salee", "Pâtes", "100", 500, "5", "\"compareAtPrice\":90"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.compareAtPrice").exists());
@@ -316,7 +322,8 @@ class CatalogApiTests extends PostgresIntegrationTest {
         mockMvc.perform(get("/api/products/" + c)).andExpect(jsonPath("$.sku").value("BTY-0001"));
 
         adminCreate(unitJson("boissons", "Jus C", "100", 1000, "5", "\"sku\":\"grc-0001\""))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SKU_CONFLICT"));
         adminCreate(unitJson("boissons", "Jus D", "100", 1000, "5", "\"sku\":\"jus-d-1l\""))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.sku").value("JUS-D-1L"));
@@ -356,7 +363,8 @@ class CatalogApiTests extends PostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value(v + 1));
         adminUpdate(id, unitJson("boissons", "Café en grains", "440", 260, "45", "\"version\":" + v))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
         adminUpdate(id, unitJson("boissons", "Café sans version", "440", 260, "45", ""))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.version").exists());

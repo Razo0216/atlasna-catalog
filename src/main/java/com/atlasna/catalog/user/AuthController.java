@@ -3,15 +3,17 @@ package com.atlasna.catalog.user;
 import com.atlasna.catalog.user.dto.AuthResponse;
 import com.atlasna.catalog.user.dto.LoginRequest;
 import com.atlasna.catalog.user.dto.RegisterRequest;
+import com.atlasna.catalog.user.dto.UserResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * Public authentication endpoints (permitted for everyone in SecurityConfig).
+ * Authentication endpoints. Register and login are public (SecurityConfig); {@code /me} needs a valid token.
  * Both return an {@link AuthResponse} containing a JWT to send as {@code Authorization: Bearer <token>}.
  * {@code @Valid} rejects bad input with 400 before the service is called.
  */
@@ -22,7 +24,7 @@ public class AuthController {
 
     private final AuthService authService;
 
-    /** Creates a CUSTOMER account and logs it in. 201 on success, 409 if the email is taken. */
+    /** Creates a CUSTOMER account and logs it in. 201 on success, 409 if the email or phone is taken. */
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
@@ -35,5 +37,14 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         return ResponseEntity.ok(authService.login(request, httpRequest.getRemoteAddr()));
+    }
+
+    /**
+     * The logged-in user (re-read from the database). 401 without a valid token.
+     * The principal is the {@link User} entity that JwtAuthFilter loaded for this request.
+     */
+    @GetMapping("/me")
+    public UserResponse me(@AuthenticationPrincipal User user) {
+        return authService.currentUser(user.getId());
     }
 }

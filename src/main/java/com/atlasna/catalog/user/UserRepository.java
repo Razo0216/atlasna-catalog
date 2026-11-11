@@ -11,5 +11,7 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
     boolean existsByEmail(String email);
+    /** Expects the canonical +213 form from PhoneNumbers.normalize. */
+    boolean existsByPhone(String phone);
     boolean existsByRole(Role role);
 }

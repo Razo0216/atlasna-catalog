@@ -1,14 +1,17 @@
 package com.atlasna.catalog.user;
 
+import com.atlasna.catalog.common.exception.ApiException;
 import com.atlasna.catalog.common.exception.EmailAlreadyInUseException;
 import com.atlasna.catalog.security.JwtService;
 import com.atlasna.catalog.security.LoginRateLimiter;
 import com.atlasna.catalog.user.dto.RegisterRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -36,9 +39,25 @@ class AuthServiceTest {
         when(userRepository.saveAndFlush(any(User.class)))
                 .thenThrow(new DataIntegrityViolationException("duplicate key value violates unique constraint"));
 
-        assertThatThrownBy(() -> authService.register(new RegisterRequest("Jane", "Jane@Example.com", "SuperSecret1")))
+        assertThatThrownBy(() -> authService.register(new RegisterRequest("Jane", "Jane@Example.com", "SuperSecret1", "0551234567")))
                 .isInstanceOf(EmailAlreadyInUseException.class)
                 .hasMessageContaining("jane@example.com");
+        verifyNoInteractions(jwtService);
+    }
+
+    @Test
+    void concurrentDuplicatePhoneIsReportedAsPhoneInUse() {
+        // Same race, but the phone's unique index fires (both requests passed existsByPhone).
+        when(passwordEncoder.encode(any())).thenReturn("hash");
+        when(userRepository.saveAndFlush(any(User.class))).thenThrow(new DataIntegrityViolationException(
+                "could not execute statement",
+                new RuntimeException("ERROR: duplicate key value violates unique constraint \"ux_users_phone\"")));
+
+        assertThatThrownBy(() -> authService.register(new RegisterRequest("Sara", "sara@example.com", "SuperSecret1", "0551234567")))
+                .isInstanceOfSatisfying(ApiException.class, e -> {
+                    assertThat(e.getCode()).isEqualTo("PHONE_ALREADY_IN_USE");
+                    assertThat(e.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                });
         verifyNoInteractions(jwtService);
     }
 }

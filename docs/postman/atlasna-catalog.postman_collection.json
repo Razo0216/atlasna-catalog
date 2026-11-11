@@ -1,13 +1,58 @@
 {
   "info": {
-    "name": "Atlasna Catalog API",
-    "description": "Phase 1 API: auth + product catalog.\n\n1. Start Postgres (`docker compose up -d`) and the app (`./mvnw spring-boot:run`).\n2. Import this file, then run the whole collection with the Collection Runner (in order).\n\nTokens are saved to collection variables automatically by the login/register requests. Admin credentials are the dev ones from application-dev.yml.",
+    "name": "Atlasna Catalog - Phase 1",
+    "description": "Phase 1 API (catalog + auth) for a local dev server.\n\n1. `docker compose up -d` and `./mvnw spring-boot:run` (dev profile).\n2. Run the whole collection (Runner) or start with **1. Auth → Login as admin**.\n\nTokens and ids are stored in collection variables automatically. Every request has tests that check the status and the error `code`. Safe to re-run: emails, phones and names are made unique per run.\n\nadminEmail / adminPassword are the local dev values from application-dev.yml - never real credentials.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
       "name": "1. Auth",
       "item": [
+        {
+          "name": "Login as admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Run this first: it stores {{adminToken}} for the admin folders. Dev credentials come from application-dev.yml.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"returns a Bearer token for an ADMIN\", () => {",
+                  "  pm.expect(body.tokenType).to.eql(\"Bearer\");",
+                  "  pm.expect(body.user.role).to.eql(\"ADMIN\");",
+                  "});",
+                  "pm.collectionVariables.set(\"adminToken\", body.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
         {
           "name": "Register customer",
           "request": {
@@ -18,18 +63,21 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/auth/register",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Phone accepts 0551234567, 0551 23 45 67, +213551234567, 00213… and is stored as +213XXXXXXXXX.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Test Customer\",\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
+              "raw": "{\n  \"fullName\": \"Yasmine Test\",\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\",\n  \"phone\": \"{{customerPhoneTyped}}\"\n}"
             }
           },
           "event": [
@@ -38,8 +86,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Fresh email every run so the collection can be re-run without 409s.",
-                  "pm.collectionVariables.set('customerEmail', `customer+${Date.now()}@example.com`);"
+                  "// Fresh email + phone on every run so the collection can be re-run against the same database.",
+                  "const n = String(Date.now()).slice(-8);",
+                  "pm.collectionVariables.set(\"customerEmail\", \"client\" + n + \"@example.dz\");",
+                  "pm.collectionVariables.set(\"customerPhoneTyped\", \"06 \" + n.slice(0, 2) + \" \" + n.slice(2, 4) + \" \" + n.slice(4, 6) + \" \" + n.slice(6, 8));",
+                  "pm.collectionVariables.set(\"customerPhone\", \"+2136\" + n);"
                 ]
               }
             },
@@ -48,18 +99,20 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
                   "const body = pm.response.json();",
-                  "pm.test(\"returns a Bearer token\", () => { pm.expect(body.tokenType).to.eql(\"Bearer\"); pm.expect(body.accessToken).to.be.a(\"string\").and.not.empty; });",
-                  "pm.test(\"new users are CUSTOMER\", () => pm.expect(body.user.role).to.eql(\"CUSTOMER\"));",
-                  "pm.collectionVariables.set('customerToken', body.accessToken);"
+                  "pm.test(\"customer role, phone normalised to +213\", () => {",
+                  "  pm.expect(body.user.role).to.eql(\"CUSTOMER\");",
+                  "  pm.expect(body.user.phone).to.eql(pm.collectionVariables.get(\"customerPhone\"));",
+                  "});",
+                  "pm.collectionVariables.set(\"customerToken\", body.accessToken);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Register duplicate email -> 409",
+          "name": "Register - invalid phone → 400",
           "request": {
             "method": "POST",
             "header": [
@@ -68,18 +121,20 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/auth/register",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Someone Else\",\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
+              "raw": "{\n  \"fullName\": \"Bad Phone\",\n  \"email\": \"bad-phone@example.dz\",\n  \"password\": \"Password123\",\n  \"phone\": \"0451234567\"\n}"
             }
           },
           "event": [
@@ -88,14 +143,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"409 Conflict for an existing email\", () => pm.response.to.have.status(409));"
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"fieldErrors.phone is set\", () => pm.expect(pm.response.json().fieldErrors.phone !== undefined).to.be.true);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Register invalid input -> 400",
+          "name": "Register - missing fields → 400",
           "request": {
             "method": "POST",
             "header": [
@@ -104,18 +161,20 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/auth/register",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"\",\n  \"email\": \"not-an-email\",\n  \"password\": \"short\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
+              "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"short\"\n}"
             }
           },
           "event": [
@@ -124,16 +183,21 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"400 Bad Request\", () => pm.response.to.have.status(400));",
-                  "const errors = pm.response.json().fieldErrors;",
-                  "pm.test(\"reports each invalid field\", () => pm.expect(errors).to.have.all.keys(\"fullName\", \"email\", \"password\"));"
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "const fe = pm.response.json().fieldErrors;",
+                  "pm.test(\"reports every bad field\", () => {",
+                  "  pm.expect(fe.fullName).to.eql(\"Full name is required\");",
+                  "  pm.expect(fe.phone).to.eql(\"Phone is required\");",
+                  "  pm.expect(fe.password).to.eql(\"Password must be at least 8 characters\");",
+                  "});"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Login admin",
+          "name": "Register - same email → 409",
           "request": {
             "method": "POST",
             "header": [
@@ -142,18 +206,20 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/auth/login",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
+              "raw": "{\n  \"fullName\": \"Dup Email\",\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"Password123\",\n  \"phone\": \"0799999999\"\n}"
             }
           },
           "event": [
@@ -162,17 +228,15 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
-                  "pm.test(\"user is ADMIN\", () => pm.expect(body.user.role).to.eql(\"ADMIN\"));",
-                  "pm.collectionVariables.set('adminToken', body.accessToken);"
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code EMAIL_ALREADY_IN_USE\", () => pm.expect(pm.response.json().code).to.eql(\"EMAIL_ALREADY_IN_USE\"));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Login customer",
+          "name": "Register - same phone, other spelling → 409",
           "request": {
             "method": "POST",
             "header": [
@@ -181,18 +245,20 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/auth/login",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
+              "raw": "{\n  \"fullName\": \"Dup Phone\",\n  \"email\": \"other-{{customerEmail}}\",\n  \"password\": \"Password123\",\n  \"phone\": \"{{customerPhone}}\"\n}"
             }
           },
           "event": [
@@ -201,15 +267,15 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('customerToken', pm.response.json().accessToken);"
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code PHONE_ALREADY_IN_USE\", () => pm.expect(pm.response.json().code).to.eql(\"PHONE_ALREADY_IN_USE\"));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Login wrong password -> 401",
+          "name": "Login - customer",
           "request": {
             "method": "POST",
             "header": [
@@ -218,20 +284,21 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/auth/login",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"definitely-wrong\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "5 wrong passwords for the same email within 15 minutes returns 429 (login locked)."
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"{{customerPassword}}\"\n}"
+            }
           },
           "event": [
             {
@@ -239,8 +306,117 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"401 Unauthorized\", () => pm.response.to.have.status(401));",
-                  "pm.test(\"generic message (no account enumeration)\", () => pm.expect(pm.response.json().message).to.eql(\"Invalid email or password\"));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"customerToken\", pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login - wrong password → 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"WrongPassword1\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code INVALID_CREDENTIALS\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_CREDENTIALS\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me (customer)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const me = pm.response.json();",
+                  "pm.test(\"returns the logged-in user with phone\", () => {",
+                  "  pm.expect(me.email).to.eql(pm.collectionVariables.get(\"customerEmail\"));",
+                  "  pm.expect(me.phone).to.eql(pm.collectionVariables.get(\"customerPhone\"));",
+                  "  pm.expect(me.passwordHash === undefined).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me without token → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code UNAUTHENTICATED\", () => pm.expect(pm.response.json().code).to.eql(\"UNAUTHENTICATED\"));"
                 ]
               }
             }
@@ -249,178 +425,68 @@
       ]
     },
     {
-      "name": "2. Products - public",
+      "name": "2. Catalog (public)",
       "item": [
         {
-          "name": "List products",
+          "name": "Category tree",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/products?page=0&size=10",
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
-                  "pm.test(\"paged response shape\", () => { pm.expect(body.content).to.be.an(\"array\"); pm.expect(body.page).to.include.keys(\"size\", \"number\", \"totalElements\", \"totalPages\"); });",
-                  "if (body.content.length) pm.collectionVariables.set('existingProductId', body.content[0].id);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "List by category, sorted by price",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/api/products?category=ELECTRONICS&sort=price,desc",
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"only ELECTRONICS\", () => pm.response.json().content.forEach(p => pm.expect(p.category).to.eql(\"ELECTRONICS\")));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Search by name",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/api/products?search=tea",
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"names match search\", () => pm.response.json().content.forEach(p => pm.expect(p.name.toLowerCase()).to.include(\"tea\")));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Get product by id",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/api/products/{{existingProductId}}",
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"returns that product\", () => pm.expect(String(pm.response.json().id)).to.eql(String(pm.collectionVariables.get(\"existingProductId\"))));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Get missing product -> 404",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/api/products/999999999",
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"404 Not Found\", () => pm.response.to.have.status(404));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Invalid category -> 400",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/api/products?category=NOPE",
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"400 Bad Request\", () => pm.response.to.have.status(400));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "3. Products - admin",
-      "item": [
-        {
-          "name": "Create product (admin)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/api/products",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Argan Oil Serum\",\n  \"description\": \"Pure cold-pressed argan oil.\",\n  \"price\": 2500.0,\n  \"category\": \"BEAUTY\",\n  \"stockQuantity\": 40\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+            "url": {
+              "raw": "{{baseUrl}}/api/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "categories"
+              ]
             },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
+            "description": "Stores a department id/slug and a leaf (sub-category) id/slug for later requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const roots = pm.response.json();",
+                  "pm.test(\"two departments: GROCERY and BEAUTY\", () => {",
+                  "  pm.expect(roots.map(r => r.type).sort()).to.eql([\"BEAUTY\", \"GROCERY\"]);",
+                  "});",
+                  "const grocery = roots.find(r => r.type === \"GROCERY\");",
+                  "pm.collectionVariables.set(\"groceryRootId\", grocery.id);",
+                  "pm.collectionVariables.set(\"groceryRootSlug\", grocery.slug);",
+                  "pm.collectionVariables.set(\"leafCategoryId\", grocery.children[0].id);",
+                  "pm.collectionVariables.set(\"leafCategorySlug\", grocery.children[0].slug);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Products - first page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products?page=0&size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products"
+              ],
+              "query": [
                 {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "10"
                 }
               ]
             }
@@ -431,23 +497,45 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
-                  "const body = pm.response.json();",
-                  "pm.test(\"fields saved\", () => { pm.expect(body.name).to.eql(\"Argan Oil Serum\"); pm.expect(body.category).to.eql(\"BEAUTY\"); });",
-                  "pm.collectionVariables.set('productId', body.id);"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const page = pm.response.json();",
+                  "pm.test(\"Spring page shape\", () => {",
+                  "  pm.expect(Array.isArray(page.content)).to.be.true;",
+                  "  pm.expect(typeof page.page.totalElements).to.eql(\"number\");",
+                  "});",
+                  "pm.test(\"public JSON hides stock, active, version\", () => {",
+                  "  const p = page.content[0];",
+                  "  pm.expect(p.stockQuantity === undefined && p.active === undefined && p.version === undefined).to.be.true;",
+                  "});",
+                  "if (page.content.length) {",
+                  "  pm.collectionVariables.set(\"publicProductId\", page.content[0].id);",
+                  "  pm.collectionVariables.set(\"publicProductSlug\", page.content[0].slug);",
+                  "}"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Get created product",
+          "name": "Products - by department (includes sub-categories)",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/products/{{productId}}",
-            "auth": {
-              "type": "noauth"
+            "url": {
+              "raw": "{{baseUrl}}/api/products?category={{groceryRootSlug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "{{groceryRootSlug}}"
+                }
+              ]
             }
           },
           "event": [
@@ -456,44 +544,581 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"is the created product\", () => pm.expect(pm.response.json().name).to.eql(\"Argan Oil Serum\"));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"only GROCERY products\", () => pm.expect(pm.response.json().content.every(p => p.category.type === \"GROCERY\")).to.be.true);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Update product (admin)",
+          "name": "Products - type BEAUTY, cheapest first",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products?type=BEAUTY&sort=price,asc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "BEAUTY"
+                },
+                {
+                  "key": "sort",
+                  "value": "price,asc"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const prices = pm.response.json().content.map(p => p.price);",
+                  "pm.test(\"sorted by price ascending\", () => pm.expect(prices).to.eql([...prices].sort((a, b) => a - b)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Products - search q",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products?q=huile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "huile"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Products - in stock + featured",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products?inStock=true&featured=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "inStock",
+                  "value": "true"
+                },
+                {
+                  "key": "featured",
+                  "value": "true"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"all in stock and featured\", () => pm.expect(pm.response.json().content.every(p => p.featured && p.availability !== \"OUT_OF_STOCK\")).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Products - invalid sort → 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products?sort=stockQuantity,desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "stockQuantity,desc"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code INVALID_SORT\", () => pm.expect(pm.response.json().code).to.eql(\"INVALID_SORT\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Products - invalid type → 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products?type=ELECTRONICS",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "ELECTRONICS"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/{{publicProductId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "{{publicProductId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"bilingual name\", () => pm.expect(typeof pm.response.json().name.fr).to.eql(\"string\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product by slug",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/by-slug/{{publicProductSlug}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "by-slug",
+                "{{publicProductSlug}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"same product\", () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get(\"publicProductId\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product not found → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "999999999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code PRODUCT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"PRODUCT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Admin - products",
+      "item": [
+        {
+          "name": "Create product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": {\n    \"fr\": \"Jus d'orange Postman\",\n    \"ar\": null\n  },\n  \"description\": {\n    \"fr\": null,\n    \"ar\": null\n  },\n  \"brand\": null,\n  \"sku\": null,\n  \"barcode\": null,\n  \"categoryId\": {{leafCategoryId}},\n  \"price\": 250.0,\n  \"compareAtPrice\": null,\n  \"soldBy\": \"UNIT\",\n  \"quantityStep\": 1,\n  \"unitWeightGrams\": 1000,\n  \"stockQuantity\": 3,\n  \"lowStockThreshold\": 5,\n  \"perishable\": false,\n  \"featured\": false,\n  \"attributes\": {\n    \"volume\": \"1 L\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"admin JSON has stock and version; slug and SKU generated\", () => {",
+                  "  pm.expect(p.stockQuantity).to.eql(3);",
+                  "  pm.expect(typeof p.version).to.eql(\"number\");",
+                  "  pm.expect(p.sku.startsWith(\"GRC-\")).to.be.true;",
+                  "});",
+                  "pm.collectionVariables.set(\"productId\", p.id);",
+                  "pm.collectionVariables.set(\"productVersion\", p.version);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - too heavy → 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
+              ]
+            },
+            "description": "Items over atlasna.store.max-item-weight-grams (5000 g) are not sold.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": {\n    \"fr\": \"Sac de farine 25 kg\",\n    \"ar\": null\n  },\n  \"description\": {\n    \"fr\": null,\n    \"ar\": null\n  },\n  \"brand\": null,\n  \"sku\": null,\n  \"barcode\": null,\n  \"categoryId\": {{leafCategoryId}},\n  \"price\": 250.0,\n  \"compareAtPrice\": null,\n  \"soldBy\": \"UNIT\",\n  \"quantityStep\": 1,\n  \"unitWeightGrams\": 25000,\n  \"stockQuantity\": 3,\n  \"lowStockThreshold\": 5,\n  \"perishable\": false,\n  \"featured\": false,\n  \"attributes\": {\n    \"volume\": \"1 L\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"code PRODUCT_TOO_HEAVY\", () => pm.expect(pm.response.json().code).to.eql(\"PRODUCT_TOO_HEAVY\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - in a department, not a sub-category → 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": {\n    \"fr\": \"Produit mal classé\",\n    \"ar\": null\n  },\n  \"description\": {\n    \"fr\": null,\n    \"ar\": null\n  },\n  \"brand\": null,\n  \"sku\": null,\n  \"barcode\": null,\n  \"categoryId\": {{groceryRootId}},\n  \"price\": 250.0,\n  \"compareAtPrice\": null,\n  \"soldBy\": \"UNIT\",\n  \"quantityStep\": 1,\n  \"unitWeightGrams\": 1000,\n  \"stockQuantity\": 3,\n  \"lowStockThreshold\": 5,\n  \"perishable\": false,\n  \"featured\": false,\n  \"attributes\": {\n    \"volume\": \"1 L\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"code CATEGORY_NOT_LEAF\", () => pm.expect(pm.response.json().code).to.eql(\"CATEGORY_NOT_LEAF\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - unknown category → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": {\n    \"fr\": \"Produit orphelin\",\n    \"ar\": null\n  },\n  \"description\": {\n    \"fr\": null,\n    \"ar\": null\n  },\n  \"brand\": null,\n  \"sku\": null,\n  \"barcode\": null,\n  \"categoryId\": 999999,\n  \"price\": 250.0,\n  \"compareAtPrice\": null,\n  \"soldBy\": \"UNIT\",\n  \"quantityStep\": 1,\n  \"unitWeightGrams\": 1000,\n  \"stockQuantity\": 3,\n  \"lowStockThreshold\": 5,\n  \"perishable\": false,\n  \"featured\": false,\n  \"attributes\": {\n    \"volume\": \"1 L\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code CATEGORY_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"CATEGORY_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - UNIT with step 0.5 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": {\n    \"fr\": \"Pâtes\",\n    \"ar\": null\n  },\n  \"description\": {\n    \"fr\": null,\n    \"ar\": null\n  },\n  \"brand\": null,\n  \"sku\": null,\n  \"barcode\": null,\n  \"categoryId\": {{leafCategoryId}},\n  \"price\": 250.0,\n  \"compareAtPrice\": null,\n  \"soldBy\": \"UNIT\",\n  \"quantityStep\": 0.5,\n  \"unitWeightGrams\": 1000,\n  \"stockQuantity\": 3,\n  \"lowStockThreshold\": 5,\n  \"perishable\": false,\n  \"featured\": false,\n  \"attributes\": {\n    \"volume\": \"1 L\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get product (admin view)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products",
+                "{{productId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update product (with version)",
           "request": {
             "method": "PUT",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/products/{{productId}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Argan Oil Serum (Large)\",\n  \"description\": \"Pure cold-pressed argan oil.\",\n  \"price\": 3900.0,\n  \"category\": \"BEAUTY\",\n  \"stockQuantity\": 25\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products",
+                "{{productId}}"
               ]
             },
-            "description": "PUT replaces the product: send every field."
+            "description": "PUT is a full replace and needs the version you last read (optimistic locking).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": {\n    \"fr\": \"Jus d'orange Postman 1 L\",\n    \"ar\": null\n  },\n  \"description\": {\n    \"fr\": null,\n    \"ar\": null\n  },\n  \"brand\": null,\n  \"sku\": null,\n  \"barcode\": null,\n  \"categoryId\": {{leafCategoryId}},\n  \"price\": 260.0,\n  \"compareAtPrice\": null,\n  \"soldBy\": \"UNIT\",\n  \"quantityStep\": 1,\n  \"unitWeightGrams\": 1000,\n  \"stockQuantity\": 3,\n  \"lowStockThreshold\": 5,\n  \"perishable\": false,\n  \"featured\": false,\n  \"attributes\": {\n    \"volume\": \"1 L\"\n  },\n  \"version\": {{productVersion}}\n}"
+            }
           },
           "event": [
             {
@@ -501,41 +1126,84 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
-                  "pm.test(\"changes applied\", () => { pm.expect(body.name).to.eql(\"Argan Oil Serum (Large)\"); pm.expect(body.price).to.eql(3900); pm.expect(body.stockQuantity).to.eql(25); });"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"version went up\", () => pm.expect(p.version).to.eql(Number(pm.collectionVariables.get(\"productVersion\")) + 1));",
+                  "pm.collectionVariables.set(\"staleVersion\", pm.collectionVariables.get(\"productVersion\"));",
+                  "pm.collectionVariables.set(\"productVersion\", p.version);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Create invalid product -> 400",
+          "name": "Update with stale version → 409",
           "request": {
-            "method": "POST",
+            "method": "PUT",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/products",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products",
+                "{{productId}}"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"\",\n  \"price\": 0,\n  \"category\": \"BEAUTY\",\n  \"stockQuantity\": -1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
+              "raw": "{\n  \"name\": {\n    \"fr\": \"Jus d'orange conflit\",\n    \"ar\": null\n  },\n  \"description\": {\n    \"fr\": null,\n    \"ar\": null\n  },\n  \"brand\": null,\n  \"sku\": null,\n  \"barcode\": null,\n  \"categoryId\": {{leafCategoryId}},\n  \"price\": 250.0,\n  \"compareAtPrice\": null,\n  \"soldBy\": \"UNIT\",\n  \"quantityStep\": 1,\n  \"unitWeightGrams\": 1000,\n  \"stockQuantity\": 3,\n  \"lowStockThreshold\": 5,\n  \"perishable\": false,\n  \"featured\": false,\n  \"attributes\": {\n    \"volume\": \"1 L\"\n  },\n  \"version\": {{staleVersion}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code CONCURRENT_MODIFICATION\", () => pm.expect(pm.response.json().code).to.eql(\"CONCURRENT_MODIFICATION\"));"
+                ]
               }
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
+            }
+          ]
+        },
+        {
+          "name": "List low-stock products",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products?lowStock=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
+              ],
+              "query": [
                 {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
+                  "key": "lowStock",
+                  "value": "true"
                 }
               ]
             }
@@ -546,30 +1214,36 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"400 Bad Request\", () => pm.response.to.have.status(400));",
-                  "pm.test(\"reports invalid fields\", () => pm.expect(pm.response.json().fieldErrors).to.include.keys(\"name\", \"price\", \"stockQuantity\"));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"contains the new product (stock 3 ≤ threshold 5)\", () =>",
+                  "  pm.expect(pm.response.json().content.some(p => p.id === Number(pm.collectionVariables.get(\"productId\")))).to.be.true);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Delete product (admin)",
+          "name": "Soft delete product",
           "request": {
             "method": "DELETE",
-            "header": [],
-            "url": "{{baseUrl}}/api/products/{{productId}}",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products",
+                "{{productId}}"
               ]
-            },
-            "description": "Soft delete: the product is hidden from public reads."
+            }
           },
           "event": [
             {
@@ -577,20 +1251,27 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"204 No Content\", () => pm.response.to.have.status(204));"
+                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Get deleted product -> 404",
+          "name": "Deleted product is hidden publicly → 404",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/products/{{productId}}",
-            "auth": {
-              "type": "noauth"
+            "url": {
+              "raw": "{{baseUrl}}/api/products/{{productId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "{{productId}}"
+              ]
             }
           },
           "event": [
@@ -599,7 +1280,87 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"404 Not Found after soft delete\", () => pm.response.to.have.status(404));"
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"code PRODUCT_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"PRODUCT_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deleted product visible with active=false",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products?active=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "active",
+                  "value": "false"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"listed as inactive\", () =>",
+                  "  pm.expect(pm.response.json().content.some(p => p.id === Number(pm.collectionVariables.get(\"productId\")))).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Restore product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products/{{productId}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products",
+                "{{productId}}",
+                "restore"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"active again\", () => pm.expect(pm.response.json().active).to.be.true);"
                 ]
               }
             }
@@ -608,36 +1369,27 @@
       ]
     },
     {
-      "name": "4. Security checks",
+      "name": "4. Admin - categories",
       "item": [
         {
-          "name": "Customer creates product -> 403",
+          "name": "Category tree (admin, includes inactive)",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/products",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Argan Oil Serum\",\n  \"description\": \"Pure cold-pressed argan oil.\",\n  \"price\": 2500.0,\n  \"category\": \"BEAUTY\",\n  \"stockQuantity\": 40\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "categories"
               ]
             }
           },
@@ -647,26 +1399,216 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"403 Forbidden for CUSTOMER\", () => pm.response.to.have.status(403));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Customer deletes product -> 403",
+          "name": "Create sub-category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "categories"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parentId\": {{groceryRootId}},\n  \"type\": \"GROCERY\",\n  \"name\": { \"fr\": \"Test Postman {{runId}}\", \"ar\": \"اختبار\" },\n  \"sortOrder\": 99,\n  \"active\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"runId\", String(Date.now()).slice(-6));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const c = pm.response.json();",
+                  "pm.test(\"slug generated from the French name\", () => pm.expect(c.slug).to.eql(\"test-postman-\" + pm.collectionVariables.get(\"runId\")));",
+                  "pm.collectionVariables.set(\"newCategoryId\", c.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - slug already used → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "categories"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{leafCategorySlug}}\",\n  \"parentId\": {{groceryRootId}},\n  \"type\": \"GROCERY\",\n  \"name\": { \"fr\": \"Doublon\" }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code SLUG_CONFLICT\", () => pm.expect(pm.response.json().code).to.eql(\"SLUG_CONFLICT\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create - BEAUTY child under GROCERY → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "categories"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parentId\": {{groceryRootId}},\n  \"type\": \"BEAUTY\",\n  \"name\": { \"fr\": \"Mauvais type\" }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"code VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update sub-category",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories/{{newCategoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "categories",
+                "{{newCategoryId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parentId\": {{groceryRootId}},\n  \"type\": \"GROCERY\",\n  \"name\": { \"fr\": \"Test Postman renommé\", \"ar\": \"اختبار\" },\n  \"sortOrder\": 98,\n  \"active\": false\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"slug kept on rename\", () => pm.expect(pm.response.json().slug).to.eql(\"test-postman-\" + pm.collectionVariables.get(\"runId\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete a category that has products → 409",
           "request": {
             "method": "DELETE",
-            "header": [],
-            "url": "{{baseUrl}}/api/products/{{existingProductId}}",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories/{{leafCategoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "categories",
+                "{{leafCategoryId}}"
               ]
             }
           },
@@ -676,76 +1618,33 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"403 Forbidden for CUSTOMER\", () => pm.response.to.have.status(403));"
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"code CATEGORY_IN_USE\", () => pm.expect(pm.response.json().code).to.eql(\"CATEGORY_IN_USE\"));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "No token creates product -> 401",
+          "name": "Delete empty sub-category",
           "request": {
-            "method": "POST",
+            "method": "DELETE",
             "header": [
               {
-                "key": "Content-Type",
-                "value": "application/json"
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/products",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Argan Oil Serum\",\n  \"description\": \"Pure cold-pressed argan oil.\",\n  \"price\": 2500.0,\n  \"category\": \"BEAUTY\",\n  \"stockQuantity\": 40\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"401 Unauthorized without a token\", () => pm.response.to.have.status(401));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Invalid token creates product -> 401",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/api/products",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Argan Oil Serum\",\n  \"description\": \"Pure cold-pressed argan oil.\",\n  \"price\": 2500.0,\n  \"category\": \"BEAUTY\",\n  \"stockQuantity\": 40\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "not.a.real.jwt",
-                  "type": "string"
-                }
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories/{{newCategoryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "categories",
+                "{{newCategoryId}}"
               ]
             }
           },
@@ -755,26 +1654,31 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"401 Unauthorized with a bad token\", () => pm.response.to.have.status(401));"
+                  "pm.test(\"status 204\", () => pm.response.to.have.status(204));"
                 ]
               }
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "name": "5. Security checks",
+      "item": [
         {
-          "name": "Invalid token on public endpoint -> 200",
+          "name": "Admin route without token → 401",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/products",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "not.a.real.jwt",
-                  "type": "string"
-                }
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
               ]
             }
           },
@@ -784,7 +1688,189 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"public listing still works with a bad token\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code UNAUTHENTICATED\", () => pm.expect(pm.response.json().code).to.eql(\"UNAUTHENTICATED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin route with customer token → 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"code FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create product as customer → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": {\n    \"fr\": \"Interdit\",\n    \"ar\": null\n  },\n  \"description\": {\n    \"fr\": null,\n    \"ar\": null\n  },\n  \"brand\": null,\n  \"sku\": null,\n  \"barcode\": null,\n  \"categoryId\": {{leafCategoryId}},\n  \"price\": 250.0,\n  \"compareAtPrice\": null,\n  \"soldBy\": \"UNIT\",\n  \"quantityStep\": 1,\n  \"unitWeightGrams\": 1000,\n  \"stockQuantity\": 3,\n  \"lowStockThreshold\": 5,\n  \"perishable\": false,\n  \"featured\": false,\n  \"attributes\": {\n    \"volume\": \"1 L\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"code FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin categories as customer → 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{customerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "categories"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"code FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bad token on public route still works",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{badToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bad token on admin route → 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{badToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "products"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"code UNAUTHENTICATED\", () => pm.expect(pm.response.json().code).to.eql(\"UNAUTHENTICATED\"));"
                 ]
               }
             }
@@ -807,12 +1893,12 @@
       "value": "ChangeMe123!"
     },
     {
-      "key": "customerEmail",
-      "value": ""
+      "key": "customerPassword",
+      "value": "Password123"
     },
     {
-      "key": "customerPassword",
-      "value": "SuperSecret1"
+      "key": "badToken",
+      "value": "not.a.jwt"
     },
     {
       "key": "adminToken",
@@ -823,12 +1909,60 @@
       "value": ""
     },
     {
+      "key": "customerEmail",
+      "value": ""
+    },
+    {
+      "key": "customerPhone",
+      "value": ""
+    },
+    {
+      "key": "customerPhoneTyped",
+      "value": ""
+    },
+    {
+      "key": "groceryRootId",
+      "value": ""
+    },
+    {
+      "key": "groceryRootSlug",
+      "value": ""
+    },
+    {
+      "key": "leafCategoryId",
+      "value": ""
+    },
+    {
+      "key": "leafCategorySlug",
+      "value": ""
+    },
+    {
+      "key": "publicProductId",
+      "value": ""
+    },
+    {
+      "key": "publicProductSlug",
+      "value": ""
+    },
+    {
       "key": "productId",
       "value": ""
     },
     {
-      "key": "existingProductId",
-      "value": "1"
+      "key": "productVersion",
+      "value": ""
+    },
+    {
+      "key": "staleVersion",
+      "value": ""
+    },
+    {
+      "key": "runId",
+      "value": ""
+    },
+    {
+      "key": "newCategoryId",
+      "value": ""
     }
   ]
 }
