@@ -1,5 +1,7 @@
 package com.atlasna.catalog.product.dto;
 
+import com.atlasna.catalog.common.LocalizedText;
+
 import com.atlasna.catalog.product.domain.CategoryType;
 
 /** The category embedded in a product response. */

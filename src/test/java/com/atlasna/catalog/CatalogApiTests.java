@@ -3,7 +3,7 @@ package com.atlasna.catalog;
 import com.atlasna.catalog.product.domain.Category;
 import com.atlasna.catalog.product.domain.CategoryRepository;
 import com.atlasna.catalog.product.domain.ProductRepository;
-import com.atlasna.catalog.security.JwtService;
+import com.atlasna.catalog.user.security.JwtService;
 import com.atlasna.catalog.user.Role;
 import com.atlasna.catalog.user.User;
 import com.atlasna.catalog.user.UserRepository;
@@ -56,7 +56,7 @@ class CatalogApiTests extends PostgresIntegrationTest {
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired JwtService jwtService;
     @Autowired EntityManagerFactory entityManagerFactory;
-    @Autowired com.atlasna.catalog.config.DemoProductImages demoProductImages;
+    @Autowired com.atlasna.catalog.product.seed.DemoProductImages demoProductImages;
 
     String adminToken;
     String customerToken;
@@ -478,7 +478,7 @@ class CatalogApiTests extends PostgresIntegrationTest {
 
     @Test
     void everyMappedDemoPhotoExistsAsAFile() {
-        for (String slug : com.atlasna.catalog.config.DemoProductImages.PHOTOS.keySet()) {
+        for (String slug : com.atlasna.catalog.product.seed.DemoProductImages.PHOTOS.keySet()) {
             assertThat(getClass().getResource("/static/media/products/" + slug + ".webp")).as(slug).isNotNull();
         }
     }

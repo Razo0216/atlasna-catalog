@@ -105,7 +105,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleApiException(ApiException ex) {
         HttpStatus status = ex.getStatus();
         ApiError body = ex.getFieldErrors() == null
-                ? ApiError.of(status.value(), status.getReasonPhrase(), ex.getCode(), ex.getMessage())
+                ? ApiError.of(status.value(), status.getReasonPhrase(), ex.getCode(), ex.getMessage(), ex.getDetails())
                 : ApiError.ofFieldErrors(status.value(), ex.getCode(), ex.getMessage(), ex.getFieldErrors());
         return ResponseEntity.status(status).body(body);
     }

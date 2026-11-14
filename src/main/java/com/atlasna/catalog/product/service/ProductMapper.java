@@ -1,13 +1,14 @@
 package com.atlasna.catalog.product.service;
 
-import com.atlasna.catalog.config.StoreProperties;
+import com.atlasna.catalog.store.StoreSettings;
+import com.atlasna.catalog.store.StoreSettingsService;
 import com.atlasna.catalog.product.domain.Category;
 import com.atlasna.catalog.product.domain.Product;
 import com.atlasna.catalog.product.domain.ProductImage;
 import com.atlasna.catalog.product.domain.SoldBy;
 import com.atlasna.catalog.product.dto.AdminProductResponse;
 import com.atlasna.catalog.product.dto.CategorySummary;
-import com.atlasna.catalog.product.dto.LocalizedText;
+import com.atlasna.catalog.common.LocalizedText;
 import com.atlasna.catalog.product.dto.ProductImageResponse;
 import com.atlasna.catalog.product.dto.ProductResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,11 +25,11 @@ import java.util.Map;
 @Component
 public class ProductMapper {
 
-    private final StoreProperties store;
+    private final StoreSettingsService settings;
     private final String mediaBaseUrl;
 
-    public ProductMapper(StoreProperties store, @Value("${atlasna.media.base-url:/media}") String mediaBaseUrl) {
-        this.store = store;
+    public ProductMapper(StoreSettingsService settings, @Value("${atlasna.media.base-url:/media}") String mediaBaseUrl) {
+        this.settings = settings;
         this.mediaBaseUrl = mediaBaseUrl.replaceAll("/+$", "");
     }
 
@@ -53,10 +54,15 @@ public class ProductMapper {
         return new CategorySummary(c.getId(), c.getSlug(), c.getType(), LocalizedText.of(c.getNameFr(), c.getNameAr()));
     }
 
-    private BigDecimal maxOrderQuantity(Product p) {
+    private StoreSettings store() {
+        return settings.current();
+    }
+
+    /** The most one order line may hold: stock, capped by the store's per-line limit. Public so ordering uses the same rule. */
+    public BigDecimal maxOrderQuantity(Product p) {
         BigDecimal lineLimit = p.getSoldBy() == SoldBy.UNIT
-                ? BigDecimal.valueOf(store.maxLineQuantityUnit())
-                : store.maxLineQuantityWeight();
+                ? BigDecimal.valueOf(store().maxLineQuantityUnit())
+                : store().maxLineQuantityWeight();
         return p.maxOrderQuantity(lineLimit);
     }
 

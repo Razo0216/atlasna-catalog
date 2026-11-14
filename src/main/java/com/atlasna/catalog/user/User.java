@@ -63,6 +63,10 @@ public class User implements UserDetails {
     @Builder.Default
     private Role role = Role.CUSTOMER;
 
+    /** Set for accounts the admin created (staff, drivers) until they replace the temporary password. */
+    @Builder.Default
+    private boolean mustChangePassword = false;
+
     /** Disabled accounts can't log in (Spring Security checks {@link #isEnabled()}). */
     @Builder.Default
     private boolean enabled = true;

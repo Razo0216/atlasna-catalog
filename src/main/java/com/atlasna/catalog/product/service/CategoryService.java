@@ -8,7 +8,7 @@ import com.atlasna.catalog.product.domain.ProductRepository;
 import com.atlasna.catalog.product.dto.AdminCategoryNode;
 import com.atlasna.catalog.product.dto.CategoryNode;
 import com.atlasna.catalog.product.dto.CategoryRequest;
-import com.atlasna.catalog.product.dto.LocalizedText;
+import com.atlasna.catalog.common.LocalizedText;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

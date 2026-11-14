@@ -37,4 +37,8 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
     @Query(value = "SELECT COALESCE(MAX(CAST(SUBSTRING(sku FROM 5) AS INTEGER)), 0) FROM products "
             + "WHERE sku ~ CONCAT('^', :prefix, '-[0-9]{4,9}$')", nativeQuery = true)
     int maxGeneratedSkuNumber(String prefix);
+
+    /** Products by id with their category (one query) — used to price carts and orders. */
+    @EntityGraph(attributePaths = "category")
+    java.util.List<Product> findByIdIn(java.util.Collection<Long> ids);
 }

@@ -1,0 +1,49 @@
+@startuml
+title <size:24>Order</size>
+
+set separator none
+top to bottom direction
+
+<style>
+  root {
+    BackgroundColor: #ffffff
+    FontColor: #444444
+  }
+</style>
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+System_Boundary("AtlasnaCatalogApplication_boundary", "AtlasnaCatalogApplication", $tags="") {
+  Container_Boundary("AtlasnaCatalogApplication.AtlasnaCatalogApplication_boundary", "AtlasnaCatalogApplication", $tags="") {
+    Component(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Order, "Order", $techn="Module", $descr="", $tags="", $link="")
+    Component(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Common, "Common", $techn="Module", $descr="", $tags="", $link="")
+    Component(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Store, "Store", $techn="Module", $descr="", $tags="", $link="")
+    Component(AtlasnaCatalogApplication.AtlasnaCatalogApplication.User, "User", $techn="Module", $descr="", $tags="", $link="")
+    Component(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Delivery, "Delivery", $techn="Module", $descr="", $tags="", $link="")
+    Component(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Inventory, "Inventory", $techn="Module", $descr="", $tags="", $link="")
+    Component(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Product, "Product", $techn="Module", $descr="", $tags="", $link="")
+  }
+
+}
+
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.User, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Common, "depends on", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Inventory, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Common, "depends on", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Inventory, AtlasnaCatalogApplication.AtlasnaCatalogApplication.User, "depends on", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Product, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Common, "depends on", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Product, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Store, "uses", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Product, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Inventory, "uses", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Order, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Common, "depends on", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Order, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Store, "depends on", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Order, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Product, "uses", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Order, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Inventory, "uses", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Order, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Delivery, "uses", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Order, AtlasnaCatalogApplication.AtlasnaCatalogApplication.User, "uses", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Store, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Common, "depends on", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Delivery, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Common, "depends on", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Delivery, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Store, "uses", $techn="", $tags="", $link="")
+
+SHOW_LEGEND(true)
+hide stereotypes
+@enduml

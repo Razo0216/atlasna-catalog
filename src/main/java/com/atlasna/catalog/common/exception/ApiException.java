@@ -3,6 +3,7 @@ package com.atlasna.catalog.common.exception;
 import lombok.Getter;
 import org.springframework.http.HttpStatus;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -17,16 +18,33 @@ public class ApiException extends RuntimeException {
     private final String code;
     /** Per-field messages for 400 validation errors; null otherwise. */
     private final Map<String, String> fieldErrors;
+    /** Machine-readable specifics (e.g. which products lack stock); null otherwise. */
+    private final List<Map<String, Object>> details;
 
     public ApiException(HttpStatus status, String code, String message) {
         this(status, code, message, null);
     }
 
     public ApiException(HttpStatus status, String code, String message, Map<String, String> fieldErrors) {
+        this(status, code, message, fieldErrors, null);
+    }
+
+    private ApiException(HttpStatus status, String code, String message, Map<String, String> fieldErrors,
+                         List<Map<String, Object>> details) {
         super(message);
         this.status = status;
         this.code = code;
         this.fieldErrors = fieldErrors;
+        this.details = details;
+    }
+
+    /** Same error with machine-readable details attached (rendered as {@code details} in the JSON). */
+    public ApiException withDetails(List<Map<String, Object>> details) {
+        return new ApiException(status, code, getMessage(), fieldErrors, details);
+    }
+
+    public static ApiException forbidden(String code, String message) {
+        return new ApiException(HttpStatus.FORBIDDEN, code, message);
     }
 
     public static ApiException notFound(String code, String message) {

@@ -1,6 +1,6 @@
 package com.atlasna.catalog.config;
 
-import com.atlasna.catalog.security.JwtAuthFilter;
+import com.atlasna.catalog.user.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -84,7 +84,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/media/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         // Defence in depth: admin controllers also carry @PreAuthorize("hasRole('ADMIN')").
+                        // Phase 3: the shop floor. Order board and stock for STAFF; the delivery round for DRIVER.
+                        .requestMatchers("/api/admin/orders/**").hasAnyRole("STAFF", "ADMIN")
+                        .requestMatchers("/api/admin/products/*/stock-adjustments", "/api/admin/products/*/stock-movements")
+                            .hasAnyRole("STAFF", "ADMIN")
+                        .requestMatchers("/api/driver/**").hasRole("DRIVER")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // Public delivery info; the customer's own cart, addresses and orders.
+                        .requestMatchers(HttpMethod.GET, "/api/delivery/**").permitAll()
+                        .requestMatchers("/api/cart/**", "/api/me/**", "/api/orders/**").hasRole("CUSTOMER")
                         .anyRequest().authenticated()
                 )
                 // Unauthenticated access to a protected endpoint -> 401 with the same ApiError

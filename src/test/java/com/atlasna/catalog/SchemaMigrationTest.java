@@ -19,6 +19,6 @@ class SchemaMigrationTest extends PostgresIntegrationTest {
         var info = flyway.info();
         assertThat(info.applied()).isNotEmpty();
         assertThat(info.pending()).isEmpty();
-        assertThat(info.current().getVersion().getVersion()).isEqualTo("2");
+        assertThat(info.current().getVersion().getVersion()).isEqualTo("4");
     }
 }

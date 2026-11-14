@@ -47,4 +47,16 @@ public class AuthController {
     public UserResponse me(@AuthenticationPrincipal User user) {
         return authService.currentUser(user.getId());
     }
+
+    /** Replaces the password (required for staff/driver accounts created with a temporary one). */
+    @PostMapping("/change-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void changePassword(@AuthenticationPrincipal User user, @Valid @RequestBody ChangePasswordRequest r) {
+        authService.changePassword(user.getId(), r.currentPassword(), r.newPassword());
+    }
+
+    public record ChangePasswordRequest(
+            @jakarta.validation.constraints.NotBlank(message = "Current password is required") String currentPassword,
+            @jakarta.validation.constraints.NotBlank(message = "New password is required")
+            @jakarta.validation.constraints.Size(min = 8, message = "Password must be at least 8 characters") String newPassword) {}
 }

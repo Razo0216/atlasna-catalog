@@ -1,8 +1,8 @@
 package com.atlasna.catalog;
 
-import com.atlasna.catalog.config.DataSeeder;
+import com.atlasna.catalog.product.seed.DataSeeder;
 import com.atlasna.catalog.product.domain.ProductRepository;
-import com.atlasna.catalog.security.LoginRateLimiter;
+import com.atlasna.catalog.user.security.LoginRateLimiter;
 import com.atlasna.catalog.user.Role;
 import com.atlasna.catalog.user.User;
 import com.atlasna.catalog.user.UserRepository;

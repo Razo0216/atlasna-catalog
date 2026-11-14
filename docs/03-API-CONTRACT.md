@@ -110,55 +110,81 @@ Validation: `name.fr` 1–200 · `price` > 0, ≤ 2 decimals, ≤ 10 integer dig
 
 ---
 
-## 4. Delivery, cart, orders — Phase 3 (consumed by the frontend in Phase 4)
+## 4. Delivery, cart, orders — Phase 3 (built 2026-11-13; consumed by the frontend in Phase 4)
 
-**Account required to order** (no guest checkout). Guest carts live in the browser and are merged on login.
+**Account required to order** (no guest checkout); `/api/cart`, `/api/me/**`, `/api/orders/**` are for the CUSTOMER role.
+Guest carts live in the browser and are merged on login. Times are `"HH:mm"` in Africa/Algiers; dates `YYYY-MM-DD`.
+Some errors carry `details` (e.g. `INSUFFICIENT_STOCK` → `[{productId, available}]`, `ORDER_BELOW_MINIMUM` → `[{minimum, missing}]`,
+`SLOT_UNAVAILABLE` → `[{reason}]`, `ORDER_TOO_HEAVY` → `[{maxGrams, totalGrams}]`, `PRODUCT_UNAVAILABLE` → `[{productId}]`).
+New codes in Phase 3: `CART_EMPTY`, `ADDRESS_NOT_FOUND`, `ORDER_ITEM_NOT_FOUND`, `ZONE_NOT_FOUND`, `SLOT_NOT_FOUND`, `USER_NOT_FOUND`.
 
 ### Delivery (public)
-`GET /api/delivery/zones` → `[{id, slug, name{fr,ar}, fee, minOrderAmount, freeDeliveryThreshold, etaMinutes}]`
-`GET /api/delivery/slots?zoneId=&date=YYYY-MM-DD` → `[{slotId, start:"14:00", end:"16:00", remaining: 3, available: true, reason?: "FULL|PAST_CUTOFF|TOO_SOON|CLOSED"}]`
+`GET /api/delivery/zones` → `[{id, slug, name{fr,ar}, fee, minOrderAmount, freeDeliveryThreshold, etaMinutes}]` (active zones)
+`GET /api/delivery/slots?zoneId=&date=YYYY-MM-DD` → `[{slotId, start:"14:00", end:"16:00", remaining: 3, available: true, reason: null|"FULL"|"PAST_CUTOFF"|"TOO_SOON"|"CLOSED"}]`
+(unknown/inactive zone → `422 ZONE_NOT_SERVED`)
 
 ### Addresses (customer) `/api/me/addresses`
-`GET` list · `POST` · `PUT /{id}` · `DELETE /{id}` · `POST /{id}/default`. Body `{label, recipientName, phone, zoneId, street, landmark, buildingNotes?, lat?, lng?}`.
-Another user's address id → `404`.
+`GET` list (default first) · `POST` → `201` · `PUT /{id}` · `DELETE /{id}` → `204` · `POST /{id}/default`.
+Body `{label?, recipientName, phone, zoneId, street, landmark, buildingNotes?, lat?, lng?}` → `{id, label, recipientName, phone (+213…), zoneId, street, landmark, buildingNotes, lat, lng, isDefault}`.
+Another user's address id → `404 ADDRESS_NOT_FOUND`. The first address becomes the default. At most 10.
 
 ### Cart (customer)
-`GET /api/cart` → `{ items:[{productId, product: ProductResponse-lite, quantity, substitutionPolicy, lineTotal, warnings:[ "PRICE_CHANGED"|"LOW_STOCK"|"UNAVAILABLE" ]}], subtotal, totalWeightGrams, issues:[…] }`
-`PUT /api/cart/items/{productId}` `{quantity, substitutionPolicy?}` (quantity must respect `quantityStep`, ≤ `maxOrderQuantity`; `0` removes) · `DELETE /api/cart/items/{productId}` · `DELETE /api/cart` ·
-`POST /api/cart/merge` `{items:[{productId, quantity}]}` (guest → account; clamps and reports what it could not add).
+`GET /api/cart` → `CartResponse`:
+```jsonc
+{ "items": [ { "productId": 9, "product": ProductResponse | null /* null when no longer public */, "name": {"fr":"Tomates","ar":"طماطم"},
+               "quantity": 1.5, "substitutionPolicy": "CALL_ME", "unitPrice": 80.00, "lineTotal": 120.00,
+               "warnings": [ "PRICE_CHANGED" | "LOW_STOCK" | "UNAVAILABLE" ] } ],
+  "subtotal": 120.00, "totalWeightGrams": 1500,
+  "issues": [ { "productId": 12, "code": "UNAVAILABLE" | "QUANTITY_EXCEEDS_STOCK" } ],   // these block checkout
+  "checkoutReady": true }
+```
+`PUT /api/cart/items/{productId}` `{quantity, substitutionPolicy?}` — snapped DOWN to `quantityStep`, clamped to `maxOrderQuantity`; `0` removes;
+unknown product `404 PRODUCT_NOT_FOUND`; hidden or out of stock `422 PRODUCT_UNAVAILABLE` · `DELETE /api/cart/items/{productId}` · `DELETE /api/cart` ·
+`POST /api/cart/merge` `{items:[{productId, quantity}]}` → `{cart: CartResponse, notes:[{productId, reason: "NOT_FOUND"|"UNAVAILABLE"|"QUANTITY_REDUCED", requested, added}]}`
+(idempotent: a line ends at the larger quantity, never the sum). All cart reads re-price from the catalog.
 
 ### Orders (customer)
-`POST /api/orders` — header **`Idempotency-Key: <uuid>`** required. Body:
+`POST /api/orders` — header **`Idempotency-Key: <uuid>`** required (missing → `400`, `fieldErrors["Idempotency-Key"]`). Body:
 ```jsonc
-{ "addressId": 12, "slotId": 4, "slotDate": "2026-10-06", "paymentMethod": "CASH_ON_DELIVERY",
+{ "addressId": 12, "slotId": 4, "slotDate": "2026-11-14", "paymentMethod": "CASH_ON_DELIVERY",
   "customerNote": "Appelez avant d'arriver", "changeFor": 5000 }      // items come from the SERVER cart; prices are never sent
 ```
-→ `201 OrderResponse` · `409 INSUFFICIENT_STOCK` (with `details:[{productId, available}]`) · `409 SLOT_FULL` · `422 ORDER_BELOW_MINIMUM` · `422 ORDER_TOO_HEAVY` · `422 ZONE_NOT_SERVED` ·
-`409 IDEMPOTENCY_KEY_REUSED` (same key, different body) · replaying the same key + body returns the **original** order with `200`.
+→ `201 OrderResponse` · same key + same body again → `200` with the **original** order · same key + different body → `409 IDEMPOTENCY_KEY_REUSED` ·
+`422 CART_EMPTY` · `404 ADDRESS_NOT_FOUND` · `422 ZONE_NOT_SERVED` · `409 PRODUCT_UNAVAILABLE` (hidden product) · `422 ORDER_BELOW_MINIMUM` ·
+`422 ORDER_TOO_HEAVY` · `409 SLOT_UNAVAILABLE` (rules) · `409 SLOT_FULL` · `409 INSUFFICIENT_STOCK` (sold out meanwhile).
 
 ```jsonc
-// OrderResponse
-{ "orderNumber": "ATL-261005-7K2F", "status": "PLACED", "createdAt": "…",
-  "items": [ { "id": 91, "name": {"fr":"Tomates","ar":"طماطم"}, "soldBy": "WEIGHT", "unitPrice": 80.00,
+// OrderResponse (captured from the real API)
+{ "orderNumber": "ATL-261113-7K2F", "status": "PLACED", "createdAt": "…",
+  "items": [ { "id": 91, "productId": 9, "name": {"fr":"Tomates","ar":"طماطم"}, "sku": "GRC-0001", "soldBy": "WEIGHT", "unitPrice": 80.00,
                "quantityOrdered": 1.5, "quantityFulfilled": null, "lineTotal": 120.00,
-               "substitutionPolicy": "CALL_ME", "status": "PENDING" } ],
-  "subtotal": 120.00, "deliveryFee": 200.00, "total": 320.00, "totalIsEstimate": true,   // true while any WEIGHT line is unfulfilled
-  "paymentMethod": "CASH_ON_DELIVERY", "paymentStatus": "PENDING",
-  "delivery": { "zone": {"id":1,"name":{"fr":"Annaba centre","ar":"عنابة وسط"}}, "recipientName": "…", "phone": "+2135…", "street": "…", "landmark": "…",
-                "slotDate": "2026-10-06", "slotStart": "14:00", "slotEnd": "16:00" },
-  "history": [ { "status": "PLACED", "at": "…" } ] }
+               "substitutionPolicy": "CALL_ME", "status": "PENDING", "substituteProductId": null } ],
+  "subtotal": 2220.00, "deliveryFee": 200.00, "total": 2420.00, "totalIsEstimate": true,   // true while any WEIGHT line is unweighed
+  "paymentMethod": "CASH_ON_DELIVERY", "paymentStatus": "PENDING", "customerNote": null, "changeFor": null,
+  "delivery": { "zone": {"id":1,"name":{"fr":"Annaba centre","ar":"وسط عنابة"}}, "recipientName": "…", "phone": "+2135…", "street": "…",
+                "landmark": "…", "buildingNotes": null, "slotDate": "2026-11-14", "slotStart": "10:00", "slotEnd": "12:00" },
+  "history": [ { "status": "PLACED", "at": "…", "reason": null } ] }
 ```
-`GET /api/orders?page&size` (mine, newest first) · `GET /api/orders/{orderNumber}` (**404 if not mine**) · `POST /api/orders/{orderNumber}/cancel` `{reason?}` (`409 INVALID_STATE_TRANSITION` after PREPARING) ·
-`POST /api/orders/{orderNumber}/reorder` → rebuilds the cart from a past order, returns `CartResponse` with warnings.
+`GET /api/orders?page&size` → page of `{orderNumber, status, createdAt, itemCount, total, totalIsEstimate, slotDate, slotStart, slotEnd}` (newest first) ·
+`GET /api/orders/{orderNumber}` (**404 if not mine**) · `POST /api/orders/{orderNumber}/cancel` `{reason?}` → `OrderResponse` (`409 INVALID_STATE_TRANSITION` once PREPARING) ·
+`POST /api/orders/{orderNumber}/reorder` → `{cart: CartResponse, notes:[…]}` (live prices; `PRICE_CHANGED` where the price moved since the order).
 
-### Staff / admin / driver — Phase 3
-`GET /api/admin/orders?status&date&zoneId&q&assignedDriverId` (STAFF, ADMIN) · `GET /api/admin/orders/{orderNumber}` ·
-`POST /api/admin/orders/{orderNumber}/transition` `{to, reason?}` (allow-table + role per transition) ·
-`PATCH /api/admin/orders/{orderNumber}/items/{itemId}` `{quantityFulfilled?, status?, substituteProductId?}` (recomputes totals) ·
-`POST /api/admin/orders/{orderNumber}/assign-driver` `{driverId}` ·
-`GET /api/driver/orders` (own, active) · `POST /api/driver/orders/{orderNumber}/start` · `/deliver` `{cashCollected}` · `/fail` `{reason}` ·
-`POST /api/admin/products/{id}/stock-adjustments` `{delta, reason, note?}` · `GET /api/admin/products/{id}/stock-movements` ·
-Admin CRUD: `/api/admin/delivery/zones`, `/api/admin/delivery/slots`, `/api/admin/settings` (GET/PUT) · `GET /api/admin/users?role=` (list drivers/staff).
+### Staff / admin / driver
+Order board (STAFF, ADMIN): `GET /api/admin/orders?status&date&zoneId&q&assignedDriverId&page&size` → page of
+`{orderNumber, status, createdAt, recipientName, phone, zoneId, slotDate, slotStart, slotEnd, total, totalIsEstimate, assignedDriverId, totalChangeFlagged}` ·
+`GET /api/admin/orders/{n}` → `AdminOrderResponse {order: OrderResponse, customerId, assignedDriverId, estimatedTotal, totalChangeFlagged,
+customerFlagged /* ≥3 failed COD deliveries for this phone in 30 days */, failedDeliveriesRecently, cashCollected, cancelledReason, failureReason, totalWeightGrams, version}` ·
+`POST /api/admin/orders/{n}/transition` `{to, reason?, cashCollected?}` (allow-table + role; cancelling as staff needs a `reason`) ·
+`PATCH /api/admin/orders/{n}/items/{itemId}` `{quantityFulfilled?, status?: "PACKED"|"OUT_OF_STOCK"|"SUBSTITUTED", substituteProductId?}` (PREPARING only; recomputes totals, moves stock) ·
+`POST /api/admin/orders/{n}/assign-driver` `{driverId}`. All return `AdminOrderResponse`.
+Driver (assigned orders only, others `404`): `GET /api/driver/orders` (READY/OUT/FAILED queue) · `GET /api/driver/orders/{n}` ·
+`POST /api/driver/orders/{n}/start` · `/deliver` `{cashCollected, note?}` (a different amount needs a `note`) · `/fail` `{reason}`.
+Stock (ADMIN; STAFF except `EXPIRED`): `POST /api/admin/products/{id}/stock-adjustments` `{delta, reason: "RESTOCK"|"ADJUSTMENT"|"EXPIRED", note?}` → `{productId, stockQuantity}` ·
+`GET /api/admin/products/{id}/stock-movements?page&size`.
+Admin only: `/api/admin/delivery/zones` and `/api/admin/delivery/slots` (GET, POST, PUT `/{id}` with `version`, DELETE = deactivate) ·
+`GET/PUT /api/admin/settings` (full replace with `version`) · `POST /api/admin/users` `{fullName, email, phone?, role: STAFF|DRIVER}` →
+`201 {user, temporaryPassword}` (shown once) · `GET /api/admin/users?role=` · `PATCH /api/admin/users/{id}` `{enabled}`.
+Any signed-in user: `POST /api/auth/change-password` `{currentPassword, newPassword}` → `204`; `UserResponse` gains `mustChangePassword`.
 
 ---
 

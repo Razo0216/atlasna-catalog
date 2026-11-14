@@ -2,8 +2,8 @@ package com.atlasna.catalog.user;
 
 import com.atlasna.catalog.common.exception.ApiException;
 import com.atlasna.catalog.common.exception.EmailAlreadyInUseException;
-import com.atlasna.catalog.security.JwtService;
-import com.atlasna.catalog.security.LoginRateLimiter;
+import com.atlasna.catalog.user.security.JwtService;
+import com.atlasna.catalog.user.security.LoginRateLimiter;
 import com.atlasna.catalog.user.dto.RegisterRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
