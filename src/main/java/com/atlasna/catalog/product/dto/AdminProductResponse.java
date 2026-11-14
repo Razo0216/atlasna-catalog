@@ -1,5 +1,7 @@
 package com.atlasna.catalog.product.dto;
 
+import com.atlasna.catalog.common.LocalizedText;
+
 import com.atlasna.catalog.product.domain.Availability;
 import com.atlasna.catalog.product.domain.SoldBy;
 

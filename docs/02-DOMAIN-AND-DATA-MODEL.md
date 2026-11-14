@@ -33,7 +33,7 @@ Business rules and the end-state data model. Each table is tagged with the phase
 9. Cosmetics and food `attributes` (JSONB): `halal` (bool), `origin` (ISO country), `ingredients`, `skinType[]`, `hairType[]`, `shade`, `vegan`, `alcoholFree`, `allergens[]`, `shelfLifeMonthsAfterOpening`. Free-form but **documented**; the AI assistant (Phase 13) reads these.
 
 ### Orders & delivery (Phase 3)
-10. Minimum order amount per zone ⚙ **1 500 DA**; delivery fee per zone ⚙ (centre 200 DA, outskirts 300 DA); free delivery above a threshold ⚙ **5 000 DA**.
+10. Minimum order amount per zone ⚙ **2 000 DA** (owner's decision, 2026-11-13); delivery fee per zone ⚙ (centre 200 DA, outskirts 300 DA); free delivery above a threshold ⚙ **5 000 DA**.
 11. A slot has `capacity`; booking beyond capacity → `409 SLOT_FULL`. Slots can't be booked inside the lead time ⚙ **90 min** or after the day's cut-off ⚙ **19:00 Africa/Algiers**. Opening hours ⚙ 09:00–21:00; Ramadan hours are a configuration change, not a code change.
 12. **Prices are always computed by the server** from the database at order time. Clients never send prices. Order lines store a **snapshot** (name, unit price, unit, weight) so later catalog edits don't rewrite history.
 13. Stock is **reserved (decremented) when the order is placed** and **restored** on cancellation. Never oversell: concurrent orders for the last unit → exactly one succeeds, the other gets `409 INSUFFICIENT_STOCK`.
@@ -156,4 +156,4 @@ Use **no real brand names**. Prices are plausible demo values in DA.
 | hygiene-personnelle | Savon noir beldi 200 g / صابون أسود بلدي 200 غ | UNIT | 450 | 230 | |
 
 ## 9. Delivery zone seed (dev) — **replace with your real service area**
-`annaba-centre` (200 DA, min 1 500), `el-bouni` (250 DA), `sidi-amar` (300 DA), `el-hadjar` (300 DA). Slots: 10:00–12:00, 12:00–14:00, 14:00–16:00, 16:00–18:00, 18:00–20:00, capacity 8 each.
+`annaba-centre` (200 DA), `el-bouni` (250 DA), `sidi-amar` (300 DA), `el-hadjar` (300 DA); minimum order 2 000 DA and free delivery from 5 000 DA in every zone. Slots: three rounds a day — 10:00–12:00, 14:00–16:00, 18:00–20:00 — capacity 8 each, offered in every zone (V4; 12:00–14:00 and 16:00–18:00 exist but are switched off until there are more drivers).

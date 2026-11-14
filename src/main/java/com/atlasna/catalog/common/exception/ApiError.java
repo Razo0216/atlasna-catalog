@@ -1,6 +1,7 @@
 package com.atlasna.catalog.common.exception;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -19,15 +20,21 @@ import java.util.Map;
  *                    this, not {@code message}. Codes are never renamed.
  * @param message     English explanation for developers, safe to show
  * @param fieldErrors per-field validation messages; {@code null} for non-validation errors
+ * @param details     machine-readable specifics for some codes (e.g. INSUFFICIENT_STOCK: {@code [{productId, available}]});
+ *                    {@code null} otherwise
  */
 public record ApiError(Instant timestamp, int status, String error, String code, String message,
-                       Map<String, String> fieldErrors) {
+                       Map<String, String> fieldErrors, List<Map<String, Object>> details) {
 
     public static ApiError of(int status, String error, String code, String message) {
-        return new ApiError(Instant.now(), status, error, code, message, null);
+        return new ApiError(Instant.now(), status, error, code, message, null, null);
+    }
+
+    public static ApiError of(int status, String error, String code, String message, List<Map<String, Object>> details) {
+        return new ApiError(Instant.now(), status, error, code, message, null, details);
     }
 
     public static ApiError ofFieldErrors(int status, String code, String message, Map<String, String> fieldErrors) {
-        return new ApiError(Instant.now(), status, "Validation Failed", code, message, fieldErrors);
+        return new ApiError(Instant.now(), status, "Validation Failed", code, message, fieldErrors, null);
     }
 }

@@ -1,0 +1,33 @@
+@startuml
+title <size:24>Inventory</size>
+
+set separator none
+top to bottom direction
+
+<style>
+  root {
+    BackgroundColor: #ffffff
+    FontColor: #444444
+  }
+</style>
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+System_Boundary("AtlasnaCatalogApplication_boundary", "AtlasnaCatalogApplication", $tags="") {
+  Container_Boundary("AtlasnaCatalogApplication.AtlasnaCatalogApplication_boundary", "AtlasnaCatalogApplication", $tags="") {
+    Component(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Common, "Common", $techn="Module", $descr="", $tags="", $link="")
+    Component(AtlasnaCatalogApplication.AtlasnaCatalogApplication.User, "User", $techn="Module", $descr="", $tags="", $link="")
+    Component(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Inventory, "Inventory", $techn="Module", $descr="", $tags="", $link="")
+  }
+
+}
+
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.User, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Common, "depends on", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Inventory, AtlasnaCatalogApplication.AtlasnaCatalogApplication.Common, "depends on", $techn="", $tags="", $link="")
+Rel(AtlasnaCatalogApplication.AtlasnaCatalogApplication.Inventory, AtlasnaCatalogApplication.AtlasnaCatalogApplication.User, "depends on", $techn="", $tags="", $link="")
+
+SHOW_LEGEND(true)
+hide stereotypes
+@enduml

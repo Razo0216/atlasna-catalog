@@ -4,8 +4,8 @@ import com.atlasna.catalog.common.PhoneNumbers;
 import com.atlasna.catalog.common.exception.ApiException;
 import com.atlasna.catalog.common.exception.EmailAlreadyInUseException;
 import com.atlasna.catalog.common.exception.InvalidCredentialsException;
-import com.atlasna.catalog.security.JwtService;
-import com.atlasna.catalog.security.LoginRateLimiter;
+import com.atlasna.catalog.user.security.JwtService;
+import com.atlasna.catalog.user.security.LoginRateLimiter;
 import com.atlasna.catalog.user.dto.AuthResponse;
 import com.atlasna.catalog.user.dto.LoginRequest;
 import com.atlasna.catalog.user.dto.RegisterRequest;
@@ -118,6 +118,20 @@ public class AuthService {
                 .map(UserResponse::from)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED",
                         "Authentication is required to access this resource"));
+    }
+
+    /** Checks the current password, stores the new one, clears the "must change" flag. */
+    @Transactional
+    public void changePassword(Long userId, String currentPassword, String newPassword) {
+        User user = userRepository.findById(userId).orElseThrow(InvalidCredentialsException::new);
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw ApiException.invalidField("currentPassword", "Current password is incorrect");
+        }
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw ApiException.invalidField("newPassword", "Choose a different password");
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(false);
     }
 
     private static ApiException phoneInUse() {

@@ -2,14 +2,16 @@ package com.atlasna.catalog.product.service;
 
 import com.atlasna.catalog.common.Slugs;
 import com.atlasna.catalog.common.exception.ApiException;
-import com.atlasna.catalog.config.StoreProperties;
+import com.atlasna.catalog.inventory.InventoryService;
+import com.atlasna.catalog.inventory.StockReason;
+import com.atlasna.catalog.store.StoreSettingsService;
 import com.atlasna.catalog.product.domain.Category;
 import com.atlasna.catalog.product.domain.CategoryType;
 import com.atlasna.catalog.product.domain.Product;
 import com.atlasna.catalog.product.domain.ProductRepository;
 import com.atlasna.catalog.product.domain.SoldBy;
 import com.atlasna.catalog.product.dto.AdminProductResponse;
-import com.atlasna.catalog.product.dto.LocalizedText;
+import com.atlasna.catalog.common.LocalizedText;
 import com.atlasna.catalog.product.dto.ProductRequest;
 import com.atlasna.catalog.product.dto.ProductResponse;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +40,8 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final CategoryService categoryService;
     private final ProductMapper mapper;
-    private final StoreProperties store;
+    private final StoreSettingsService settings;
+    private final InventoryService inventory;
 
     // ---------- public ----------
 
@@ -87,7 +90,10 @@ public class ProductService {
         product.setSlug(Slugs.unique(Slugs.slugify(request.name().fr()), productRepository::existsBySlug));
         product.setSku(resolveSku(request.sku(), category.getType(), null));
         apply(product, request, category);
-        return mapper.toAdmin(productRepository.saveAndFlush(product));
+        Product saved = productRepository.saveAndFlush(product);
+        // The starting stock is the product's first ledger entry (stock_quantity = sum of movements).
+        inventory.recordCatalogChange(saved.getId(), saved.getStockQuantity(), StockReason.OPENING, null, "Product created");
+        return mapper.toAdmin(saved);
     }
 
     /**
@@ -106,9 +112,14 @@ public class ProductService {
         Category category = categoryService.requireLeaf(request.categoryId());
         validateRules(request);
         product.setSku(resolveSku(request.sku(), category.getType(), id));
+        BigDecimal stockBefore = product.getStockQuantity();
         apply(product, request, category); // slug deliberately untouched: URLs stay stable after a rename
         // Flush now so the response carries the incremented version and new updatedAt.
-        return mapper.toAdmin(productRepository.saveAndFlush(product));
+        Product saved = productRepository.saveAndFlush(product);
+        // A stock change through the product form is a manual count correction: keep the ledger complete.
+        inventory.recordCatalogChange(id, saved.getStockQuantity().subtract(stockBefore), StockReason.ADJUSTMENT, null,
+                "Product edit");
+        return mapper.toAdmin(saved);
     }
 
     /** Soft delete: hidden from the public, kept for order history, restorable. Idempotent. */
@@ -128,9 +139,10 @@ public class ProductService {
 
     private void validateRules(ProductRequest r) {
         // The store doesn't sell heavy or bulky items (25 kg flour, water packs): a real rule, not a convention.
-        if (r.unitWeightGrams() > store.maxItemWeightGrams()) {
+        int maxItemWeightGrams = settings.current().maxItemWeightGrams();
+        if (r.unitWeightGrams() > maxItemWeightGrams) {
             throw ApiException.businessRule("PRODUCT_TOO_HEAVY",
-                    "Items heavier than " + store.maxItemWeightGrams() + " g per unit are not sold");
+                    "Items heavier than " + maxItemWeightGrams + " g per unit are not sold");
         }
         if (r.soldBy() == SoldBy.UNIT && !isWholeNumber(r.quantityStep())) {
             throw ApiException.invalidField("quantityStep", "Products sold by unit need a whole-number quantity step");

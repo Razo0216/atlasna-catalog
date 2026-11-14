@@ -13,5 +13,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmail(String email);
     /** Expects the canonical +213 form from PhoneNumbers.normalize. */
     boolean existsByPhone(String phone);
+    org.springframework.data.domain.Page<User> findByRoleOrderByIdAsc(Role role, org.springframework.data.domain.Pageable pageable);
+    org.springframework.data.domain.Page<User> findAllByOrderByIdAsc(org.springframework.data.domain.Pageable pageable);
     boolean existsByRole(Role role);
 }
