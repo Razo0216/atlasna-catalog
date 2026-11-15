@@ -196,6 +196,7 @@ class OrderFlowTests extends OrderTestSupport {
                 .andExpect(jsonPath("$.items[?(@.productId==" + a + ")].warnings[0]").value("PRICE_CHANGED"))
                 .andExpect(jsonPath("$.items[?(@.productId==" + b + ")].warnings[0]").value("UNAVAILABLE"))
                 .andExpect(jsonPath("$.subtotal").value(1100.00))
+                .andExpect(jsonPath("$.maxWeightGrams").value(15000))
                 .andExpect(jsonPath("$.issues[0].code").value("UNAVAILABLE"))
                 .andExpect(jsonPath("$.checkoutReady").value(false));
     }
