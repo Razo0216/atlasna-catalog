@@ -3,8 +3,8 @@ package com.atlasna.catalog.user.security;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
-/** Binds the identity module's own settings (atlasna.jwt.*, atlasna.rate-limit.login.*) inside the module. */
+/** Binds the identity module's own settings (atlasna.jwt.*) inside the module. Rate limits: RateLimitPolicies. */
 @Configuration
-@EnableConfigurationProperties({JwtProperties.class, LoginRateLimitProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, RefreshTokenStore.Properties.class})
 class SecurityPropertiesConfig {
 }

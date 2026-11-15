@@ -1,56 +1,48 @@
 package com.atlasna.catalog.user.security;
 
-import com.atlasna.catalog.common.exception.TooManyRequestsException;
+import com.atlasna.catalog.ratelimit.RateLimitPolicies;
+import com.atlasna.catalog.ratelimit.RateLimiter;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.time.Clock;
-
 /**
- * Brute-force protection for /api/auth/login:
- * - per email: too many failed attempts locks that account's logins until the window ends;
- * - per client IP: caps total attempts, which stops one client spraying many accounts.
- * Client IP is the servlet remote address; behind a reverse proxy, configure
- * server.forward-headers-strategy so it reflects the real client, not the proxy.
+ * Brute-force protection for /api/auth/login, now shared by all instances through Redis (ADR-0011):
+ * <ul>
+ *   <li>per email: wrong passwords drain the account's bucket; an empty bucket locks its logins — even with the right
+ *       password — until a token refills (5 per 15 min by default: then one more try every 3 minutes);</li>
+ *   <li>per client IP: caps total attempts, which stops one client spraying many accounts.</li>
+ * </ul>
+ * The client IP comes from {@code ClientIpResolver} (trusted proxies only). If Redis is down, login is refused with
+ * 503 rather than left unthrottled.
  *
  * <p>Called by AuthService in this order: {@link #checkAndRecordAttempt} before the password is checked,
  * then {@link #recordFailure} or {@link #recordSuccess} depending on the result.
  */
 @Component
+@RequiredArgsConstructor
 public class LoginRateLimiter {
 
-    private final FixedWindowRateLimiter failuresByEmail;
-    private final FixedWindowRateLimiter attemptsByIp;
+    private final RateLimiter limiter;
+    private final RateLimitPolicies policies;
 
-    public LoginRateLimiter(LoginRateLimitProperties properties) {
-        Clock clock = Clock.systemUTC();
-        this.failuresByEmail = new FixedWindowRateLimiter(
-                properties.maxFailuresPerEmail(), properties.emailWindow(), clock);
-        this.attemptsByIp = new FixedWindowRateLimiter(
-                properties.maxAttemptsPerIp(), properties.ipWindow(), clock);
-    }
-
-    /** Throws if either limit is exceeded; otherwise counts this attempt against the client IP. */
+    /** Throws 429 if the account is locked or the IP has used its attempts; otherwise counts this attempt for the IP. */
     public void checkAndRecordAttempt(String email, String clientIp) {
-        long retryAfter = Math.max(failuresByEmail.retryAfterSeconds(email), attemptsByIp.retryAfterSeconds(clientIp));
-        if (retryAfter > 0) {
-            throw new TooManyRequestsException(retryAfter);
-        }
-        attemptsByIp.record(clientIp);
+        limiter.check(policies.loginFailuresPerEmail(), email);
+        limiter.consume(policies.loginAttemptsPerIp(), clientIp);
     }
 
     /** Counts a wrong password (or unknown email) against the account. */
     public void recordFailure(String email) {
-        failuresByEmail.record(email);
+        limiter.penalize(policies.loginFailuresPerEmail(), email);
     }
 
     /** A successful login clears the account's failure count. */
     public void recordSuccess(String email) {
-        failuresByEmail.reset(email);
+        limiter.reset(policies.loginFailuresPerEmail(), email);
     }
 
-    /** Forget all state; used by tests to isolate cases. */
+    /** Forget all limits; used by tests to isolate cases. */
     public void clear() {
-        failuresByEmail.clear();
-        attemptsByIp.clear();
+        limiter.clearAll();
     }
 }

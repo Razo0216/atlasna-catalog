@@ -1,5 +1,19 @@
 # The datasource comes from the Testcontainers PostgreSQL container (see PostgresIntegrationTest).
 atlasna:
+  media:
+    # A throwaway folder for test uploads.
+    storage-dir: ${java.io.tmpdir}/atlasna-test-media
   jwt:
     secret: test-only-secret-value-not-used-in-any-real-environment-at-all
     expiration-minutes: 60
+  # Most tests change products straight in SQL and read them back through the API: the cache would show stale data.
+  # It is switched off here and switched on (with real Redis) in CatalogCacheTests only.
+  cache:
+    enabled: false
+  # Every MockMvc request comes from 127.0.0.1 and tests create many accounts/orders: lift these two limits here
+  # (login keeps its real defaults — its tests depend on them). RateLimitTests checks the real values.
+  rate-limit:
+    register:
+      max-per-ip: 100000
+    orders:
+      max-per-user: 100000

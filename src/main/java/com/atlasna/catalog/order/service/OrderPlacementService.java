@@ -68,6 +68,7 @@ public class OrderPlacementService {
     private final NamedParameterJdbcTemplate jdbc;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final com.atlasna.catalog.payment.PaymentGateway gateway;
     private final SecureRandom random = new SecureRandom();
 
     /** Outcome of a placement: {@code replayed} = the same key was seen before (HTTP 200 instead of 201). */
@@ -169,6 +170,16 @@ public class OrderPlacementService {
         payment.setStatus(PaymentStatus.PENDING);
         payment.setAmount(total);
         order.setPayment(payment);
+        if (request.paymentMethod() == com.atlasna.catalog.order.domain.PaymentMethod.CARD_ONLINE) {
+            // A card is charged up front, so the amount must be final: not with per-kg lines (weighed later), and not
+            // when no gateway is configured. The customer chooses cash on delivery instead.
+            String why = !gateway.enabled() ? "NOT_CONFIGURED" : order.isTotalEstimate() ? "ESTIMATED_TOTAL" : null;
+            if (why != null) {
+                throw ApiException.businessRule("CARD_PAYMENT_UNAVAILABLE", "Card payment isn't available for this order")
+                        .withDetails(List.of(Map.of("reason", why)));
+            }
+            payment.setProvider(gateway.provider());
+        }
         orders.saveAndFlush(order);
 
         delivery.reserveSlot(slot.id(), request.slotDate(), slot.capacity());
@@ -180,7 +191,8 @@ public class OrderPlacementService {
         cart.touch();
         jdbc.update("UPDATE idempotency_records SET order_id = :o WHERE id = :id",
                 new MapSqlParameterSource("o", order.getId()).addValue("id", recordId));
-        events.publishEvent(new OrderPlaced(order.getId(), order.getOrderNumber(), userId, total));
+        events.publishEvent(new OrderPlaced(order.getId(), order.getOrderNumber(), userId, total,
+                com.atlasna.catalog.common.Actor.of(userId, "CUSTOMER")));
         return new Placement(mapper.toResponse(order), false);
     }
 

@@ -19,6 +19,10 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     List<Order> findByAssignedDriverIdAndStatusInOrderBySlotDateAscSlotStartAsc(Long driverId, List<OrderStatus> statuses);
     boolean existsByOrderNumber(String orderNumber);
 
+    /** The order behind a gateway checkout id (webhooks name the checkout, not the order). */
+    @Query("SELECT o FROM CustomerOrder o WHERE o.payment.provider = :provider AND o.payment.providerRef = :ref")
+    Optional<Order> findByPaymentProviderRef(String provider, String ref);
+
     /** Failed cash-on-delivery attempts for a phone number since a moment (repeat-failure flag, rule 17). */
     @Query(value = """
             SELECT count(*) FROM order_status_history h JOIN orders o ON o.id = h.order_id

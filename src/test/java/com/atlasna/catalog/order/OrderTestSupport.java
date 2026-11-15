@@ -110,6 +110,7 @@ public abstract class OrderTestSupport extends PostgresIntegrationTest {
 
     protected void assertLedgerHolds() {
         assertThat(inventory.ledgerMismatches()).as("stock_quantity = SUM(stock_movements.delta) for every product").isEmpty();
+        assertThat(inventory.lotMismatches()).as("stock_quantity = SUM(inventory_lots.quantity_remaining) for every product").isEmpty();
     }
 
     // ---------- delivery & cart ----------

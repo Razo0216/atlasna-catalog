@@ -71,7 +71,7 @@ public class ProductMapper {
     }
 
     private ProductImageResponse toImage(ProductImage i) {
-        return new ProductImageResponse(mediaBaseUrl + "/" + i.getStorageKey(), LocalizedText.of(i.getAltFr(), i.getAltAr()));
+        return new ProductImageResponse(mediaBaseUrl + "/" + i.getStorageKey(), LocalizedText.of(i.getAltFr(), i.getAltAr()), i.getStorageKey());
     }
 
     private static Map<String, Object> attributes(Product p) {

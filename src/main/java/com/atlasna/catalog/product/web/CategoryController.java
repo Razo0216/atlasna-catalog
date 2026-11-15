@@ -1,7 +1,7 @@
 package com.atlasna.catalog.product.web;
 
 import com.atlasna.catalog.product.dto.CategoryNode;
-import com.atlasna.catalog.product.service.CategoryService;
+import com.atlasna.catalog.product.cache.CachedCatalog;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,10 +15,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CategoryController {
 
-    private final CategoryService categoryService;
+    private final CachedCatalog catalog;
 
     @GetMapping
     public List<CategoryNode> tree() {
-        return categoryService.publicTree();
+        return catalog.categoryTree();
     }
 }

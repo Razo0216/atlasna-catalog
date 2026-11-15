@@ -9,7 +9,11 @@ import com.atlasna.catalog.product.dto.AdminCategoryNode;
 import com.atlasna.catalog.product.dto.CategoryNode;
 import com.atlasna.catalog.product.dto.CategoryRequest;
 import com.atlasna.catalog.common.LocalizedText;
+import com.atlasna.catalog.common.Actor;
+import com.atlasna.catalog.common.FieldChanges;
+import com.atlasna.catalog.product.CatalogChanged;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +32,7 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
+    private final ApplicationEventPublisher events;
 
     /** Active categories only; children of an inactive root are hidden with it. One query, built in memory. */
     @Transactional(readOnly = true)
@@ -70,7 +75,9 @@ public class CategoryService {
                 .sortOrder(request.sortOrder() == null ? 0 : request.sortOrder())
                 .active(request.active() == null || request.active())
                 .build();
-        return toAdminNode(categoryRepository.saveAndFlush(category), List.of());
+        Category saved = categoryRepository.saveAndFlush(category);
+        changed(saved.getId(), "CATEGORY_CREATED", Map.of(), snapshot(saved));
+        return toAdminNode(saved, List.of());
     }
 
     @Transactional
@@ -83,6 +90,7 @@ public class CategoryService {
         if (hasChildren && request.type() != category.getType()) {
             throw ApiException.invalidField("type", "Change the type of a root only when it has no children");
         }
+        Map<String, Object> before = snapshot(category);
         Category parent = resolveParent(request, id);
         if (parent == null && productRepository.existsByCategoryId(id)) {
             throw ApiException.conflict("CATEGORY_IN_USE", "A category that holds products must stay a child category");
@@ -97,6 +105,7 @@ public class CategoryService {
         if (request.sortOrder() != null) category.setSortOrder(request.sortOrder());
         if (request.active() != null) category.setActive(request.active());
         categoryRepository.flush();
+        changed(id, "CATEGORY_UPDATED", before, snapshot(category));
         List<AdminCategoryNode> childNodes = hasChildren
                 ? categoryRepository.findAllByOrderBySortOrderAscIdAsc().stream()
                         .filter(c -> c.getParent() != null && Objects.equals(c.getParent().getId(), id))
@@ -115,7 +124,27 @@ public class CategoryService {
         if (productRepository.existsByCategoryId(id)) {
             throw ApiException.conflict("CATEGORY_IN_USE", "The category still has products (including deleted ones)");
         }
+        Map<String, Object> before = snapshot(category);
         categoryRepository.delete(category);
+        changed(id, "CATEGORY_DELETED", before, Map.of());
+    }
+
+    /** Cache invalidation + audit log (only the fields that changed). */
+    private void changed(long id, String action, Map<String, Object> before, Map<String, Object> after) {
+        FieldChanges.Diff diff = FieldChanges.diff(before, after);
+        events.publishEvent(new CatalogChanged("CATEGORY", id, action, diff.before(), diff.after(), Actor.current()));
+    }
+
+    private static Map<String, Object> snapshot(Category c) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("slug", c.getSlug());
+        m.put("nameFr", c.getNameFr());
+        m.put("nameAr", c.getNameAr());
+        m.put("type", c.getType());
+        m.put("parentId", c.getParent() == null ? null : c.getParent().getId());
+        m.put("sortOrder", c.getSortOrder());
+        m.put("active", c.isActive());
+        return m;
     }
 
     /** For product create/update: the category must exist and be a leaf (a child), because only leaves hold products. */

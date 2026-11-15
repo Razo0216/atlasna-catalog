@@ -40,6 +40,15 @@ public class Payment {
     private Instant collectedAt;
     private String providerRef;
     private String note;
+    /** Card: the gateway ("chargily"), its hosted checkout and what we asked it to charge (whole dinars). */
+    private String provider;
+    private String checkoutUrl;
+    private Instant checkoutCreatedAt;
+    @Column(precision = 12, scale = 0)
+    private BigDecimal chargedAmount;
+    private Instant paidAt;
+    /** The webhook reported another amount than {@link #chargedAmount}: not marked PAID, staff must check. */
+    private boolean amountMismatch;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
 

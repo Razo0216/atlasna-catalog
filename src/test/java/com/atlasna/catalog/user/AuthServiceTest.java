@@ -28,7 +28,7 @@ class AuthServiceTest {
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final JwtService jwtService = mock(JwtService.class);
     private final AuthService authService = new AuthService(
-            userRepository, passwordEncoder, mock(AuthenticationManager.class), jwtService, mock(LoginRateLimiter.class));
+            userRepository, passwordEncoder, mock(AuthenticationManager.class), jwtService, mock(LoginRateLimiter.class), mock(com.atlasna.catalog.user.security.RefreshTokenStore.class), mock(org.springframework.context.ApplicationEventPublisher.class));
 
     @Test
     void concurrentDuplicateRegistrationIsReportedAsEmailInUse() {

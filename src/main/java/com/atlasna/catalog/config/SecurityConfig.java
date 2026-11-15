@@ -68,17 +68,20 @@ public class SecurityConfig {
             @Qualifier("handlerExceptionResolver") HandlerExceptionResolver exceptionResolver
     ) throws Exception {
         http
-                // CSRF protection is off because this API is stateless and authenticates only via the
-                // Authorization: Bearer header, which browsers never attach automatically. If auth ever
-                // moves to cookies (session or JWT-in-cookie), CSRF protection must be re-enabled.
+                // Spring's CSRF tokens are off: requests authenticate with the Authorization: Bearer header, which
+                // browsers never attach automatically. The one cookie (the refresh token, ADR-0009) is only sent to
+                // /api/auth/*, is SameSite=Strict, and refresh/logout also require the custom X-Atlasna-Refresh header,
+                // which a cross-site form can't send — that is the CSRF defence for those two endpoints.
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 // No HTTP session: every request must carry its own token.
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // Checked top to bottom; the first match wins, so the catch-all must stay last.
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                        // The payment provider's webhook: no login, trusted only through its HMAC signature (ADR-0013).
+                        .requestMatchers(HttpMethod.POST, "/api/webhooks/payments").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
                         // Product photos (static files until object storage arrives in Phase 5).
                         .requestMatchers(HttpMethod.GET, "/media/**").permitAll()
@@ -89,6 +92,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/products/*/stock-adjustments", "/api/admin/products/*/stock-movements")
                             .hasAnyRole("STAFF", "ADMIN")
                         .requestMatchers("/api/driver/**").hasRole("DRIVER")
+                        // Phase 5: product photos — STAFF photograph products too. The signed upload link itself is
+                        // public like a bucket URL: its HMAC signature is the permission (ADR-0014).
+                        .requestMatchers("/api/admin/uploads/**", "/api/admin/products/*/images").hasAnyRole("STAFF", "ADMIN")
+                        // Phase 5: lots (receiving goods, expiry) and stock reports for the shop floor.
+                        .requestMatchers("/api/admin/products/*/lots", "/api/admin/inventory/**").hasAnyRole("STAFF", "ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/media/uploads/**").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         // Public delivery info; the customer's own cart, addresses and orders.
                         .requestMatchers(HttpMethod.GET, "/api/delivery/**").permitAll()
@@ -145,12 +154,12 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "X-Atlasna-Refresh"));
         // Lets the frontend read the login lockout countdown cross-origin.
         config.setExposedHeaders(List.of("Retry-After"));
-        // Bearer tokens travel in a header, never in cookies, so the browser must not send credentials.
-        // Revisit (together with CSRF) only if cookies are ever introduced.
-        config.setAllowCredentials(false);
+        // Credentials (cookies) are allowed so the browser sends the httpOnly refresh cookie to /api/auth/refresh.
+        // Safe only because origins are an explicit list (never "*") — Spring refuses "*" with credentials anyway.
+        config.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
