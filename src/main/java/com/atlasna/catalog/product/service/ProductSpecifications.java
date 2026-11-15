@@ -51,12 +51,19 @@ final class ProductSpecifications {
             specs.add((root, q, cb) -> cb.equal(category(root).get("type"), f.type()));
         }
         if (f.q() != null && !f.q().isBlank()) {
-            String pattern = "%" + escapeLike(f.q().trim().toLowerCase(Locale.ROOT)) + "%";
-            specs.add((root, q, cb) -> cb.or(
-                    cb.like(cb.lower(root.get("nameFr")), pattern, LIKE_ESCAPE),
-                    cb.like(cb.lower(root.get("nameAr")), pattern, LIKE_ESCAPE),
-                    cb.like(cb.lower(root.get("brand")), pattern, LIKE_ESCAPE),
-                    cb.like(cb.lower(root.get("sku")), pattern, LIKE_ESCAPE)));
+            // Same normalisation on both sides (atlasna_search_norm, V7): accents, Arabic diacritics and letter variants
+            // don't matter. Match = the text contains the query, OR is similar enough to it (typos), via the trigram index.
+            // Typo tolerance only for words (≥ 3 letters): "50%" or "GRC-" are matched exactly, not "something like 50".
+            String escaped = escapeLike(f.q().trim());
+            boolean fuzzy = f.q().codePoints().filter(Character::isLetter).count() >= 3;
+            specs.add((root, q, cb) -> {
+                var text = root.<String>get("searchText");
+                var normalised = cb.function("atlasna_search_norm", String.class, cb.literal(escaped));
+                var contains = cb.like(text, cb.concat(cb.concat("%", normalised), "%"), LIKE_ESCAPE);
+                if (!fuzzy) return contains;
+                var fuzzyQuery = cb.function("atlasna_search_norm", String.class, cb.literal(f.q().trim()));
+                return cb.or(contains, cb.isTrue(cb.function("atlasna_fuzzy_match", Boolean.class, fuzzyQuery, text)));
+            });
         }
         if (f.inStock()) {
             // At least one quantity step left (same rule as Availability.OUT_OF_STOCK).
@@ -69,6 +76,31 @@ final class ProductSpecifications {
             specs.add((root, q, cb) -> cb.lessThanOrEqualTo(root.get("stockQuantity"), root.get("lowStockThreshold")));
         }
         return Specification.allOf(specs);
+    }
+
+    /**
+     * Search ranking when there is a query: starts with it (2) › contains it (1) › only similar (0), then by trigram
+     * word similarity. Applied before the requested sort, so "newest" or "price" order products of equal relevance.
+     */
+    static Specification<Product> rankedBy(String query, org.springframework.data.domain.Sort sort) {
+        return (root, q, cb) -> {
+            if (q.getResultType() != Long.class && q.getResultType() != long.class) { // not for the count query
+                var text = root.<String>get("searchText");
+                var normalised = cb.function("atlasna_search_norm", String.class, cb.literal(escapeLike(query.trim())));
+                var plain = cb.function("atlasna_search_norm", String.class, cb.literal(query.trim()));
+                var tier = cb.<Integer>selectCase()
+                        .when(cb.like(text, cb.concat(normalised, "%"), LIKE_ESCAPE), 2)
+                        .when(cb.like(text, cb.concat(cb.concat("%", normalised), "%"), LIKE_ESCAPE), 1)
+                        .otherwise(0);
+                var similarity = cb.function("word_similarity", Double.class, plain, text);
+                List<jakarta.persistence.criteria.Order> orders = new ArrayList<>();
+                orders.add(cb.desc(tier));
+                orders.add(cb.desc(similarity));
+                orders.addAll(org.springframework.data.jpa.repository.query.QueryUtils.toOrders(sort, root, cb));
+                q.orderBy(orders);
+            }
+            return null;
+        };
     }
 
     /**

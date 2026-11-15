@@ -241,8 +241,9 @@ class ApiIntegrationTests extends PostgresIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    /** Credentials are allowed since Phase 5 (the httpOnly refresh cookie, ADR-0009) — for the listed origins only. */
     @Test
-    void corsAllowsTheDevFrontendWithoutCredentials() throws Exception {
+    void corsAllowsTheDevFrontendWithCredentials_andNoOtherOrigin() throws Exception {
         mockMvc.perform(options("/api/products")
                         .header("Origin", "http://localhost:5173")
                         .header("Access-Control-Request-Method", "GET")
@@ -250,7 +251,7 @@ class ApiIntegrationTests extends PostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
                 .andExpect(header().string("Access-Control-Expose-Headers", "Retry-After"))
-                .andExpect(header().doesNotExist("Access-Control-Allow-Credentials"));
+                .andExpect(header().string("Access-Control-Allow-Credentials", "true"));
         mockMvc.perform(options("/api/products")
                         .header("Origin", "https://evil.example")
                         .header("Access-Control-Request-Method", "GET"))

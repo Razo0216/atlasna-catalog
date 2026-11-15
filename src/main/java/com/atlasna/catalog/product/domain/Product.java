@@ -121,6 +121,13 @@ public class Product {
     @Builder.Default
     private List<ProductImage> images = new ArrayList<>();
 
+    /**
+     * Normalised name (fr + ar), brand and SKU for search (migration V7, ADR-0016): a database-generated column,
+     * never written by the application.
+     */
+    @Column(name = "search_text", insertable = false, updatable = false)
+    private String searchText;
+
     @Column(updatable = false)
     private Instant createdAt;
 

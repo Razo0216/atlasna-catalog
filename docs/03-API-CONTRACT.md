@@ -20,7 +20,8 @@ errors, i18n shapes: `01-CONVENTIONS.md` §4.
   "code": "VALIDATION_FAILED", "message": "One or more fields are invalid",
   "fieldErrors": { "phone": "Enter a valid Algerian mobile number" } }   // fieldErrors only for validation
 ```
-`429` also sends `Retry-After: <seconds>` (exposed through CORS). Error `code`s: `02-DOMAIN-AND-DATA-MODEL.md` §7.
+`429` also sends `Retry-After: <seconds>` (exposed through CORS). Rate limits (Phase 5, ADR-0011) are token buckets:
+login 5 wrong passwords/account/15 min and 20 attempts/IP/min · sign-up 10/IP/hour · order placement 10/customer/hour. Error `code`s: `02-DOMAIN-AND-DATA-MODEL.md` §7.
 
 ---
 
@@ -28,9 +29,11 @@ errors, i18n shapes: `01-CONVENTIONS.md` §4.
 
 | Method & path | Auth | Request | Success | Notable errors |
 |---|---|---|---|---|
-| `POST /api/auth/register` | public | `{fullName, email, phone, password}` | `201 AuthResponse` | `400 VALIDATION_FAILED`, `409 EMAIL_ALREADY_IN_USE`, `409 PHONE_ALREADY_IN_USE`, `429` |
-| `POST /api/auth/login` | public | `{email, password}` | `200 AuthResponse` | `400`, `401 INVALID_CREDENTIALS`, `401 ACCOUNT_DISABLED`*, `429 TOO_MANY_REQUESTS` |
+| `POST /api/auth/register` | public | `{fullName, email, phone, password}` | `201 AuthResponse` | `400 VALIDATION_FAILED`, `409 EMAIL_ALREADY_IN_USE`, `409 PHONE_ALREADY_IN_USE`, `429 TOO_MANY_REQUESTS` (10 sign-ups/IP/hour) |
+| `POST /api/auth/login` | public | `{email, password}` | `200 AuthResponse` | `400`, `401 INVALID_CREDENTIALS`, `401 ACCOUNT_DISABLED`*, `429 TOO_MANY_REQUESTS`, `503 RATE_LIMIT_UNAVAILABLE` (+`Retry-After`; login is refused while its throttling store is down) |
 | `GET /api/auth/me` | any user | – | `200 UserResponse` | `401 UNAUTHENTICATED` |
+| `POST /api/auth/refresh` | refresh cookie + header `X-Atlasna-Refresh: 1` | – | `200 AuthResponse` + rotated cookie | `403 CSRF_CHECK_FAILED`, `401 REFRESH_TOKEN_INVALID`, `401 REFRESH_TOKEN_REUSED` (session family revoked), `401 ACCOUNT_DISABLED`, `503 SESSION_STORE_UNAVAILABLE` — every failure also clears the cookie |
+| `POST /api/auth/logout` | header `X-Atlasna-Refresh: 1` (+ cookie) | – | `204` + cleared cookie | `403 CSRF_CHECK_FAILED` |
 
 \* `ACCOUNT_DISABLED` must not reveal whether the password was right; return it only after a correct password.
 
@@ -41,11 +44,23 @@ errors, i18n shapes: `01-CONVENTIONS.md` §4.
             "phone": "+213551234567", "role": "CUSTOMER" } }
 ```
 Validation: `fullName` 1–120 chars · `email` valid, stored trimmed + lower-case · `phone` accepts `0551234567`, `0551 23 45 67`, `+213 551 23 45 67`,
-`00213…` → stored `+213551234567` · `password` ≥ 8 chars. JWT lifetime 60 min (refresh tokens arrive in Phase 5).
+`00213…` → stored `+213551234567` · `password` ≥ 8 chars. JWT lifetime 60 min (15 min once the storefront uses refresh, Phase 6).
+
+**Refresh tokens (Phase 5, ADR-0009).** Register and login also set
+`Set-Cookie: atlasna_refresh=<opaque>; HttpOnly; Secure; SameSite=Strict; Path=/api/auth; Max-Age=2592000` (30 days).
+Browsers call refresh/logout with `credentials: 'include'` and the `X-Atlasna-Refresh: 1` header. Each refresh token
+works **once**: the response carries the next one. Presenting a used token again revokes that login's whole session
+family. Changing the password or an admin disabling the account revokes every session. The client should keep the access
+token in memory and run at most one refresh at a time (two tabs refreshing with the same token = reuse = logged out).
 
 ---
 
 ## 2. Catalog (public) — Phase 1
+
+> **Caching (Phase 5):** these four GETs are served from a Redis cache (categories 5 min, product 2 min, lists 1 min).
+> Any catalog, stock or settings change invalidates it at commit, so responses are normally current; if an invalidation
+> is missed (Redis briefly unreachable) a response can be up to one TTL old. Same shapes, same errors. `availability` /
+> `maxOrderQuantity` are display hints — the cart and checkout always re-check against the database.
 
 ### `GET /api/categories` → `200 CategoryNode[]` (only active; sorted by `sortOrder`)
 ```jsonc
@@ -151,7 +166,8 @@ unknown product `404 PRODUCT_NOT_FOUND`; hidden or out of stock `422 PRODUCT_UNA
 ```
 → `201 OrderResponse` · same key + same body again → `200` with the **original** order · same key + different body → `409 IDEMPOTENCY_KEY_REUSED` ·
 `422 CART_EMPTY` · `404 ADDRESS_NOT_FOUND` · `422 ZONE_NOT_SERVED` · `409 PRODUCT_UNAVAILABLE` (hidden product) · `422 ORDER_BELOW_MINIMUM` ·
-`422 ORDER_TOO_HEAVY` · `409 SLOT_UNAVAILABLE` (rules) · `409 SLOT_FULL` · `409 INSUFFICIENT_STOCK` (sold out meanwhile).
+`422 ORDER_TOO_HEAVY` · `409 SLOT_UNAVAILABLE` (rules) · `409 SLOT_FULL` · `409 INSUFFICIENT_STOCK` (sold out meanwhile) ·
+`429 TOO_MANY_REQUESTS` (more than 10 placement attempts in an hour, Phase 5).
 
 ```jsonc
 // OrderResponse (captured from the real API)
@@ -188,11 +204,56 @@ Any signed-in user: `POST /api/auth/change-password` `{currentPassword, newPassw
 
 ---
 
-## 5. Later phases (shapes defined when the phase starts)
+## 5. Data layer & resilience — Phase 5 (built 2026-11-15; consumed by the frontend in Phase 6)
+
+New error codes: `RATE_LIMIT_UNAVAILABLE` (503), `CSRF_CHECK_FAILED` (403), `REFRESH_TOKEN_INVALID` / `REFRESH_TOKEN_REUSED`
+(401), `SESSION_STORE_UNAVAILABLE` (503), `CARD_PAYMENT_UNAVAILABLE` (422, `details:[{reason: NOT_CONFIGURED|ESTIMATED_TOTAL}]`),
+`PAYMENT_UNAVAILABLE` (503), `PAYMENT_NOT_REQUIRED` / `ALREADY_PAID` (409), `WEBHOOK_SIGNATURE_INVALID` (401),
+`WEBHOOK_INVALID` / `WEBHOOK_STALE` (400), `UPLOAD_URL_INVALID` (403), `UPLOAD_TYPE_MISMATCH` (400), `IMAGE_INVALID` (422),
+`IMAGE_TOO_LARGE` (413), `IMAGE_NOT_UPLOADED` (422).
+
+### Sessions (ADR-0009) — see §1
+`POST /api/auth/refresh`, `POST /api/auth/logout` (cookie `atlasna_refresh` + header `X-Atlasna-Refresh: 1`).
+
+### Card payment (ADR-0013, sandbox)
+- `PlaceOrderRequest.paymentMethod`: `CASH_ON_DELIVERY` | **`CARD_ONLINE`** (not for orders with per-kg lines).
+- `paymentStatus` gains `PAID`, `FAILED`, `REFUND_PENDING`.
+- `POST /api/orders/{n}/pay` `{locale?: fr|ar|en}` → `200 {checkoutUrl, orderNumber, amountDzd}` (redirect the customer
+  there; a second call within 30 min returns the same URL) · `409 PAYMENT_NOT_REQUIRED|ALREADY_PAID|INVALID_STATE_TRANSITION`
+  · `503 PAYMENT_UNAVAILABLE` (offer cash).
+- `POST /api/orders/{n}/pay-on-delivery` → `OrderResponse` with `paymentMethod: CASH_ON_DELIVERY` (before payment and
+  confirmation only).
+- The gateway returns the customer to `{storefront}/orders/{n}?payment=success|failed` — **display only**: the order is
+  paid when `paymentStatus` becomes `PAID` (poll the order).
+- `POST /api/webhooks/payments` (provider only; HMAC `signature` header over the raw body) → `200 {outcome:
+  PROCESSED|DUPLICATE|IGNORED|AMOUNT_MISMATCH}`.
+- Unpaid card orders are cancelled after 30 min. Drivers deliver card-paid orders without `cashCollected`.
+
+### Product photos (ADR-0014; ADMIN, STAFF)
+`POST /api/admin/uploads/product-image {productId, contentType: image/jpeg|png|webp, sizeBytes ≤ 5 MB}` →
+`{key, url, method: "PUT", headers: {"Content-Type": …}, expiresAt}` → `PUT <url>` with the file bytes (10 min) →
+`PUT /api/admin/products/{id}/images {images: [{key, alt?: {fr, ar}}]}` (display order; max 8; keep an image by sending its
+key) → `AdminProductResponse`. `ProductImageResponse` gains `key`.
+
+### Lots & stock reports (ADR-0015; ADMIN, STAFF)
+`GET /api/admin/products/{id}/lots` → `LotView[]` (FEFO order) · `POST /api/admin/products/{id}/lots {quantity,
+expiryDate? (required for perishables, not in the past), lotCode?, note?}` → `201 LotView` ·
+`GET /api/admin/inventory/expiring?days=3` → `LotView[]` · `GET /api/admin/inventory/low-stock` →
+`[{productId, sku, name, stockQuantity, lowStockThreshold}]`.
+`LotView = {id, productId, lotCode, quantityReceived, quantityRemaining, receivedAt, expiryDate, note}`.
+
+### Audit log (ADR-0012; ADMIN)
+`GET /api/admin/audit-logs?entityType&entityId&actorId&action&from&to&page&size` → page of
+`{id, at, actorId, actorRole, ip, action, entityType, entityId, before, after, details}`.
+
+### Search (ADR-0016)
+`GET /api/products?q=` (and the admin list) now ignores accents and Arabic diacritics/letter variants, tolerates typos
+for word queries (≥ 3 letters), and ranks best matches first (then the requested sort). Shapes unchanged.
+
+## 6. Later phases (shapes defined when the phase starts)
 
 | Phase | Endpoints |
 |---|---|
-| 5 | `POST /api/auth/refresh`, `POST /api/auth/logout` · `POST /api/orders/{n}/pay` → `{checkoutUrl}` · `POST /api/webhooks/payments` (signature-verified) · `POST /api/admin/uploads/product-image` → signed upload URL · `GET/POST /api/admin/products/{id}/lots` · `GET /api/admin/audit-logs` |
 | 6 | `GET /api/admin/reports/{sales\|top-products\|low-stock\|expiring}` · `GET /api/admin/dashboard` |
 | 7–8 | `GET /api/orders/{n}/events` (SSE) · `GET /api/me/notifications`, `POST …/{id}/read` · `POST /api/me/push-subscriptions` |
 | 13–14 | `POST /api/assistant/chat` (SSE stream of tokens + structured cards) · `POST /api/assistant/feedback` |

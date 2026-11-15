@@ -32,7 +32,7 @@ import java.util.Locale;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class User implements UserDetails {
+public class User implements UserDetails, com.atlasna.catalog.common.HasUserId {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

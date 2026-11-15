@@ -36,7 +36,7 @@ class BaseConfigHasNoCredentialsTest {
     private static boolean isSensitive(String name) {
         String n = name.toLowerCase();
         return n.contains("password") || n.contains("secret") || n.contains("username")
-                || n.equals("spring.datasource.url");
+                || n.equals("spring.datasource.url") || n.endsWith("mongodb.uri");
     }
 
     /** Allowed form: ${SOME_ENV_VAR} or ${SOME_ENV_VAR:} with no fallback value. */

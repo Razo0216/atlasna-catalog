@@ -1,4 +1,4 @@
 package com.atlasna.catalog.order.domain;
 
-/** Cash on delivery only for now; card (CIB/Edahabia) arrives in Phase 5. */
-public enum PaymentMethod { CASH_ON_DELIVERY }
+/** Cash on delivery, or card online (CIB/Edahabia through the payment gateway, Phase 5 — sandbox only). */
+public enum PaymentMethod { CASH_ON_DELIVERY, CARD_ONLINE }

@@ -1,9 +1,12 @@
 package com.atlasna.catalog.store;
 
+import com.atlasna.catalog.common.Actor;
+import com.atlasna.catalog.common.FieldChanges;
 import com.atlasna.catalog.common.exception.ApiException;
 import com.atlasna.catalog.store.domain.StoreSettingsEntity;
 import com.atlasna.catalog.store.domain.StoreSettingsRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +27,7 @@ public class StoreSettingsService {
 
     private final StoreSettingsRepository repository;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
     private volatile StoreSettings cached;
     private volatile Instant cachedAt = Instant.EPOCH;
@@ -43,6 +47,7 @@ public class StoreSettingsService {
     @Transactional
     public StoreSettings update(StoreSettings request) {
         StoreSettingsEntity e = load();
+        StoreSettings previous = toView(e);
         if (e.getVersion() != request.version()) {
             throw ApiException.conflict("CONCURRENT_MODIFICATION",
                     "Settings were changed by someone else (version " + e.getVersion() + "). Reload and retry.");
@@ -65,6 +70,11 @@ public class StoreSettingsService {
         e.setFailedDeliveryWindowDays(request.failedDeliveryWindowDays());
         StoreSettings saved = toView(repository.saveAndFlush(e));
         refresh(saved);
+        java.util.Map<String, Object> before = FieldChanges.of(previous), after = FieldChanges.of(saved);
+        before.remove("version");
+        after.remove("version");
+        FieldChanges.Diff diff = FieldChanges.diff(before, after);
+        events.publishEvent(new StoreSettingsChanged(saved.version(), diff.before(), diff.after(), Actor.current()));
         return saved;
     }
 

@@ -6,11 +6,18 @@ import com.atlasna.catalog.common.exception.EmailAlreadyInUseException;
 import com.atlasna.catalog.common.exception.InvalidCredentialsException;
 import com.atlasna.catalog.user.security.JwtService;
 import com.atlasna.catalog.user.security.LoginRateLimiter;
+import com.atlasna.catalog.user.security.RefreshTokenStore;
+import com.atlasna.catalog.user.security.RefreshTokenStore.Consumed;
 import com.atlasna.catalog.user.dto.AuthResponse;
 import com.atlasna.catalog.user.dto.LoginRequest;
 import com.atlasna.catalog.user.dto.RegisterRequest;
 import com.atlasna.catalog.user.dto.UserResponse;
+import com.atlasna.catalog.common.Actor;
+import com.atlasna.catalog.common.exception.TooManyRequestsException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.authentication.DisabledException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -26,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Both flows end by issuing a JWT for the user. Emails are normalized first (trim + lowercase)
  * so "Jane@Example.com" and "jane@example.com" are the same account.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -35,6 +43,11 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final LoginRateLimiter loginRateLimiter;
+    private final RefreshTokenStore refreshTokens;
+    private final ApplicationEventPublisher events;
+
+    /** An access token (body) and, when the session store is up, a refresh token for the httpOnly cookie. */
+    public record Session(AuthResponse body, String refreshToken) {}
 
     /**
      * Creates a new CUSTOMER account (there is no way to self-register as ADMIN) and returns a token,
@@ -93,13 +106,22 @@ public class AuthService {
      */
     public AuthResponse login(LoginRequest request, String clientIp) {
         String email = User.normalizeEmail(request.email());
-        loginRateLimiter.checkAndRecordAttempt(email, clientIp);
+        try {
+            loginRateLimiter.checkAndRecordAttempt(email, clientIp);
+        } catch (TooManyRequestsException e) {
+            loginFailed(email, "RATE_LIMITED", clientIp);
+            throw e;
+        }
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(email, request.password()));
         } catch (BadCredentialsException e) {
             loginRateLimiter.recordFailure(email);
+            loginFailed(email, "INVALID_CREDENTIALS", clientIp);
             throw new InvalidCredentialsException();
+        } catch (DisabledException e) {
+            loginFailed(email, "ACCOUNT_DISABLED", clientIp);
+            throw e;
         }
         loginRateLimiter.recordSuccess(email);
         User user = userRepository.findByEmail(email)
@@ -132,6 +154,79 @@ public class AuthService {
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setMustChangePassword(false);
+        // A changed password ends every other session: whoever knew the old one loses access now.
+        revokeAllQuietly(userId);
+        events.publishEvent(new UserAccountChanged(userId, "PASSWORD_CHANGED", user.getRole().name(), Actor.current()));
+    }
+
+    // ---------- refresh tokens (ADR-0009) ----------
+
+    /**
+     * Starts a refresh-token family for a fresh login or sign-up. If Redis is down the user is still logged in
+     * (access token only, no cookie) — they'll simply have to log in again when it expires.
+     */
+    public Session withRefreshToken(AuthResponse response) {
+        try {
+            return new Session(response, refreshTokens.startFamily(response.user().id()));
+        } catch (RuntimeException e) {
+            log.warn("No refresh token issued (session store unavailable): {}", e.getMessage());
+            return new Session(response, null);
+        }
+    }
+
+    /**
+     * Exchanges a refresh token for a new access token + the next refresh token (rotation). A token that was already
+     * used revokes its whole family (401 REFRESH_TOKEN_REUSED). Redis down → 503: refreshing fails closed.
+     */
+    @Transactional(readOnly = true)
+    public Session refresh(String rawRefreshToken) {
+        Consumed consumed;
+        try {
+            consumed = refreshTokens.consume(rawRefreshToken);
+        } catch (RuntimeException e) {
+            log.warn("Refresh refused: session store unavailable ({})", e.getMessage());
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "SESSION_STORE_UNAVAILABLE",
+                    "Sessions can't be refreshed right now; log in again in a moment");
+        }
+        switch (consumed.outcome()) {
+            case INVALID -> throw new ApiException(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_INVALID",
+                    "Your session has expired. Please log in again");
+            case REUSED -> throw new ApiException(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_REUSED",
+                    "This session was used from elsewhere and has been closed. Please log in again");
+            case OK -> { }
+        }
+        User user = userRepository.findById(consumed.userId()).orElse(null);
+        if (user == null || !user.isEnabled()) {
+            revokeAllQuietly(consumed.userId());
+            throw new ApiException(HttpStatus.UNAUTHORIZED, user == null ? "REFRESH_TOKEN_INVALID" : "ACCOUNT_DISABLED",
+                    user == null ? "Your session has expired. Please log in again" : "This account is disabled");
+        }
+        String next = refreshTokens.issue(user.getId(), consumed.familyId());
+        return new Session(buildAuthResponse(user), next);
+    }
+
+    /** Ends this device's session (its refresh family). Idempotent; never fails the logout. */
+    public void logout(String rawRefreshToken) {
+        try {
+            Consumed live = refreshTokens.peek(rawRefreshToken);
+            if (live.outcome() == RefreshTokenStore.Outcome.OK) refreshTokens.revokeFamily(live.userId(), live.familyId());
+        } catch (RuntimeException e) {
+            log.warn("Logout could not revoke the refresh token (session store unavailable): {}", e.getMessage());
+        }
+    }
+
+    /** Logs the user out everywhere (password change, account disabled). Best effort if Redis is down. */
+    public void revokeAllQuietly(long userId) {
+        try {
+            refreshTokens.revokeAll(userId);
+        } catch (RuntimeException e) {
+            log.warn("Could not revoke the sessions of user {} (session store unavailable): {}", userId, e.getMessage());
+        }
+    }
+
+    /** For the audit log: the email tried and why it failed — never the password. */
+    private void loginFailed(String email, String reason, String clientIp) {
+        events.publishEvent(new LoginFailed(email, reason, new Actor(null, "ANONYMOUS", clientIp, java.time.Instant.now())));
     }
 
     private static ApiException phoneInUse() {

@@ -44,6 +44,8 @@ public class AdminUserController {
     private final SecureRandom random = new SecureRandom();
 
     private final UserRepository users;
+    private final AuthService auth;
+    private final org.springframework.context.ApplicationEventPublisher events;
     private final PasswordEncoder passwordEncoder;
 
     public record CreateStaffRequest(@NotBlank @Size(max = 120) String fullName,
@@ -71,6 +73,8 @@ public class AdminUserController {
         String temporary = temporaryPassword();
         User user = users.saveAndFlush(User.builder().fullName(r.fullName().strip()).email(email).phone(phone)
                 .passwordHash(passwordEncoder.encode(temporary)).role(r.role()).mustChangePassword(true).build());
+        events.publishEvent(new UserAccountChanged(user.getId(), "USER_CREATED", user.getRole().name(),
+                com.atlasna.catalog.common.Actor.current()));
         return new CreatedAccount(UserResponse.from(user), temporary);
     }
 
@@ -91,7 +95,13 @@ public class AdminUserController {
         if (user.getId().equals(admin.getId()) && !r.enabled()) {
             throw ApiException.businessRule("VALIDATION_FAILED", "You can't disable your own account");
         }
+        boolean wasEnabled = user.isEnabled();
         user.setEnabled(r.enabled());
+        if (!r.enabled()) auth.revokeAllQuietly(user.getId()); // and every refresh token stops working too
+        if (wasEnabled != r.enabled()) {
+            events.publishEvent(new UserAccountChanged(user.getId(), r.enabled() ? "USER_ENABLED" : "USER_DISABLED",
+                    user.getRole().name(), com.atlasna.catalog.common.Actor.current()));
+        }
         return UserResponse.from(user);
     }
 

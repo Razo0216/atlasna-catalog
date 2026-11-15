@@ -100,6 +100,14 @@ public class GlobalExceptionHandler {
                         ex.getMessage()));
     }
 
+    @ExceptionHandler(RateLimitUnavailableException.class)
+    public ResponseEntity<ApiError> handleRateLimitUnavailable(RateLimitUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
+                .body(ApiError.of(HttpStatus.SERVICE_UNAVAILABLE.value(), "Service Unavailable", "RATE_LIMIT_UNAVAILABLE",
+                        ex.getMessage()));
+    }
+
     /** Business errors thrown by services: status, code, message and (for 400) field errors come from the exception. */
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiError> handleApiException(ApiException ex) {

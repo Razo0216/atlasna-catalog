@@ -12,12 +12,33 @@ spring:
       hibernate:
         format_sql: true
     open-in-view: false
+  # Redis (SPRING_DATA_REDIS_HOST / _PORT / _PASSWORD) and MongoDB (SPRING_MONGODB_URI) also come from the environment;
+  # application-dev.yml points at docker-compose. Repositories: only JPA (Postgres) and, for the audit log, MongoDB.
   data:
+    mongodb:
+      # MongoDB holds only the audit log, written with MongoTemplate: no repository interfaces to scan (otherwise
+      # Spring Data inspects every JPA repository at startup and logs "could not safely identify store assignment").
+      repositories:
+        type: none
+    redis:
+      repositories:
+        enabled: false
+      # Fail fast: a slow or dead Redis must cost a request milliseconds, not seconds (the cache then falls back).
+      timeout: 250ms
+      connect-timeout: 500ms
     web:
       pageable:
         # Serialize Page responses as a stable {content, page:{size,number,totalElements,totalPages}}
         # DTO instead of Jackson-dumping PageImpl internals (whose shape isn't guaranteed).
         serialization-mode: via-dto
+  cloud:
+    # Spring Cloud is only here for the Resilience4j circuit breaker; there is no service discovery (yet — Phase 7).
+    discovery:
+      enabled: false
+  modulith:
+    events:
+      # Events whose listener failed (e.g. the audit log while MongoDB was down) are delivered again at startup.
+      republish-outstanding-events-on-restart: true
   web:
     resources:
       cache:
@@ -29,6 +50,58 @@ server:
   port: 8080
 
 atlasna:
+  inventory:
+    # "Expiring soon" window for the report and the one-time alert per lot (ADR-0015).
+    expiring-soon-days: 3
+  media:
+    # Uploaded product photos (ADR-0014). Local disk in dev; a GCS bucket behind a CDN in Phase 11/12.
+    upload-base-url: ${ATLASNA_PUBLIC_API_URL:http://localhost:8080}
+    storage-dir: ${ATLASNA_MEDIA_DIR:var/media}
+    upload-ttl: 10m
+    max-bytes: 5242880
+    max-dimension: 4000
+  payment:
+    # ADR-0013. Card payment (CIB/Edahabia) through Chargily Pay V2 — SANDBOX until a registered business is onboarded.
+    return-url: ${ATLASNA_STOREFRONT_URL:http://localhost:5173}
+    webhook-url: ${ATLASNA_PAYMENT_WEBHOOK_URL:http://localhost:8080/api/webhooks/payments}
+    unpaid-timeout: 30m
+    webhook-tolerance: 72h
+    chargily:
+      base-url: ${CHARGILY_BASE_URL:https://pay.chargily.net/test/api/v2}
+      # Empty = card payment not offered. Never commit a key: set CHARGILY_SECRET_KEY in the environment.
+      secret-key: ${CHARGILY_SECRET_KEY:}
+      connect-timeout: 2s
+      read-timeout: 5s
+  audit:
+    # MongoDB audit_logs entries are deleted automatically after this long (TTL index, ADR-0012).
+    retention: 365d
+  cache:
+    # Public catalog reads only (ADR-0010). Writes invalidate immediately; the TTL bounds staleness otherwise.
+    enabled: true
+    categories-ttl: 5m
+    product-ttl: 2m
+    list-ttl: 1m
+  refresh-token:
+    # ADR-0009: opaque, rotated on every use, stored hashed in Redis, sent in an httpOnly cookie.
+    lifetime: 30d
+    cookie-name: atlasna_refresh
+    cookie-secure: true
+  rate-limit:
+    # Token buckets in Redis (ADR-0011): N per window, refilled continuously.
+    login:
+      max-failures-per-email: 5
+      email-window: 15m
+      max-attempts-per-ip: 20
+      ip-window: 1m
+    register:
+      max-per-ip: 10
+      window: 1h
+    orders:
+      max-per-user: 10
+      window: 1h
+  http:
+    # Proxies whose X-Forwarded-For we trust (our load balancer, Phase 11). Empty = use the TCP peer address only.
+    trusted-proxies: ${ATLASNA_TRUSTED_PROXIES:}
   jwt:
     # No default: startup fails unless ATLASNA_JWT_SECRET is set (application-dev.yml supplies one for local dev).
     secret: ${ATLASNA_JWT_SECRET:}
@@ -36,6 +109,62 @@ atlasna:
   cors:
     # Browser origins allowed to call the API. Override with ATLASNA_CORS_ALLOWED_ORIGINS when deploying.
     allowed-origins: ${ATLASNA_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
+
+resilience4j:
+  bulkhead:
+    instances:
+      # At most 10 calls to the payment gateway at the same time; the 11th fails at once (503) instead of queueing a
+      # request thread behind a slow provider.
+      paymentGateway:
+        max-concurrent-calls: 10
+        max-wait-duration: 0ms
+  retry:
+    instances:
+      # Only for idempotent reads (checkout status). 3 attempts, 200 ms then ~400 ms, randomised so instances don't
+      # retry in lock-step against a recovering provider.
+      paymentStatus:
+        max-attempts: 3
+        wait-duration: 200ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.5
+  circuitbreaker:
+    instances:
+      paymentGateway:
+        register-health-indicator: true
+        sliding-window-type: count-based
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 3s
+        slow-call-rate-threshold: 80
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+      # Redis behind the catalog cache: after 50 % failures over the last 20 calls (min 10), stop calling Redis for
+      # 30 s and serve from Postgres; then let 3 trial calls through to see if it's back.
+      # Redis behind the rate limits: same idea; what happens while it's open is decided per policy (ADR-0011).
+      rateLimiter:
+        sliding-window-type: count-based
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 200ms
+        slow-call-rate-threshold: 80
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+      catalogCache:
+        sliding-window-type: count-based
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 200ms
+        slow-call-rate-threshold: 80
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
 
 logging:
   level:

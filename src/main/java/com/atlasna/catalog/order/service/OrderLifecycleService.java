@@ -3,6 +3,7 @@ package com.atlasna.catalog.order.service;
 import com.atlasna.catalog.common.exception.ApiException;
 import com.atlasna.catalog.delivery.DeliveryApi;
 import com.atlasna.catalog.inventory.InventoryService;
+import com.atlasna.catalog.common.Actor;
 import com.atlasna.catalog.order.OrderStatusChanged;
 import com.atlasna.catalog.order.domain.ItemStatus;
 import com.atlasna.catalog.order.domain.Order;
@@ -143,22 +144,43 @@ public class OrderLifecycleService {
     // ---------- the single place where status changes ----------
 
     Order move(Order order, OrderStatus to, User actor, String reason, BigDecimal cashCollected) {
+        Actor who = Actor.current();
+        return move(order, to, actor.getRole(), actor.getId(), who.id() != null ? who : Actor.of(actor.getId(), actor.getRole().name()),
+                reason, cashCollected);
+    }
+
+    /**
+     * The system cancels a card order whose payment never arrived (UnpaidCardOrderJob): stock back, slot released,
+     * same rules as an admin cancellation. Returns false when the order already moved on (nothing to do).
+     */
+    @Transactional
+    public boolean cancelUnpaid(long orderId, String reason) {
+        Order order = orders.findById(orderId).orElse(null);
+        if (order == null || order.getStatus() != OrderStatus.PLACED || order.getPayment().getStatus() == PaymentStatus.PAID) {
+            return false;
+        }
+        move(order, OrderStatus.CANCELLED, Role.ADMIN, null, Actor.system(), reason, null);
+        return true;
+    }
+
+    private Order move(Order order, OrderStatus to, Role role, Long actorId, Actor eventActor, String reason, BigDecimal cashCollected) {
         OrderStatus from = order.getStatus();
-        if (!Transitions.isAllowed(from, to, actor.getRole())) {
+        if (!Transitions.isAllowed(from, to, role)) {
             throw ApiException.conflict("INVALID_STATE_TRANSITION", "Can't move an order from " + from + " to " + to);
         }
         String why = reason == null || reason.isBlank() ? null : reason.strip();
         Payment payment = order.getPayment();
         switch (to) {
             case CANCELLED -> {
-                if (actor.getRole() != Role.CUSTOMER && why == null) {
+                if (role != Role.CUSTOMER && why == null) {
                     throw ApiException.invalidField("reason", "A reason is required to cancel an order");
                 }
                 for (OrderItem i : order.getItems()) {
-                    inventory.restore(i.stockProductId(), i.reservedQuantity(), order.getId(), actor.getId());
+                    inventory.restore(i.stockProductId(), i.reservedQuantity(), order.getId(), actorId);
                 }
                 delivery.releaseSlot(order.getSlotId(), order.getSlotDate());
-                payment.setStatus(PaymentStatus.VOID);
+                // A card payment already taken must be given back (by hand until refunds are automated).
+                payment.setStatus(payment.getStatus() == PaymentStatus.PAID ? PaymentStatus.REFUND_PENDING : PaymentStatus.VOID);
                 order.setCancelledReason(why);
             }
             case READY_FOR_DELIVERY -> {
@@ -172,7 +194,9 @@ public class OrderLifecycleService {
                     i.setQuantityFulfilled(i.getQuantityOrdered());
                 }
                 recompute(order);
-                if (from == OrderStatus.DELIVERY_FAILED) payment.setStatus(PaymentStatus.PENDING); // second attempt
+                if (from == OrderStatus.DELIVERY_FAILED && payment.getStatus() == PaymentStatus.NOT_COLLECTED) {
+                    payment.setStatus(PaymentStatus.PENDING); // second attempt
+                }
             }
             case OUT_FOR_DELIVERY -> {
                 if (order.getAssignedDriverId() == null) {
@@ -180,6 +204,7 @@ public class OrderLifecycleService {
                 }
             }
             case DELIVERED -> {
+                if (payment.getStatus() == PaymentStatus.PAID) break; // paid by card: nothing to collect at the door
                 if (cashCollected == null) throw ApiException.invalidField("cashCollected", "Enter the cash collected");
                 BigDecimal cash = cashCollected.setScale(2, RoundingMode.HALF_UP);
                 if (cash.compareTo(order.getTotal()) != 0 && why == null) {
@@ -187,20 +212,20 @@ public class OrderLifecycleService {
                 }
                 payment.setStatus(PaymentStatus.COLLECTED);
                 payment.setAmount(cash);
-                payment.setCollectedBy(actor.getId());
+                payment.setCollectedBy(actorId);
                 payment.setCollectedAt(Instant.now());
                 payment.setNote(why);
             }
             case DELIVERY_FAILED -> {
                 if (why == null) throw ApiException.invalidField("reason", "Say why the delivery failed");
-                payment.setStatus(PaymentStatus.NOT_COLLECTED);
+                if (payment.getStatus() != PaymentStatus.PAID) payment.setStatus(PaymentStatus.NOT_COLLECTED);
                 order.setFailureReason(why);
             }
             default -> { }
         }
         order.setStatus(to);
-        order.record(from, to, actor.getId(), why);
-        events.publishEvent(new OrderStatusChanged(order.getId(), order.getOrderNumber(), from.name(), to.name(), actor.getId()));
+        order.record(from, to, actorId, why);
+        events.publishEvent(new OrderStatusChanged(order.getId(), order.getOrderNumber(), from.name(), to.name(), why, eventActor));
         return order;
     }
 

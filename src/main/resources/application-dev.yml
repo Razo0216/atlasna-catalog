@@ -7,8 +7,23 @@ spring:
     username: atlasna
     password: atlasna_dev_password
     driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: atlasna_dev_redis
+  mongodb:
+    # authSource=admin: the docker-compose user is created in the admin database.
+    uri: mongodb://atlasna:atlasna_dev_password@localhost:27017/atlasna?authSource=admin
 
 atlasna:
+  refresh-token:
+    # http://localhost: Chrome accepts Secure cookies there, Safari doesn't. Dev only; production keeps Secure.
+    cookie-secure: false
+  rate-limit:
+    # The Postman collection signs up many customers from 127.0.0.1 in one run.
+    register:
+      max-per-ip: 1000
   media:
     # Absolute, because the storefront runs on another origin (localhost:5173) and uses these URLs in <img>.
     base-url: http://localhost:8080/media

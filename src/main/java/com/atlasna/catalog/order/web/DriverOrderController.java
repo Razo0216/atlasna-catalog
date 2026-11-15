@@ -34,7 +34,8 @@ public class DriverOrderController {
     private final OrderQueryService queries;
     private final OrderLifecycleService lifecycle;
 
-    public record DeliverRequest(@NotNull(message = "Cash collected is required") @DecimalMin("0") @Digits(integer = 10, fraction = 2) BigDecimal cashCollected,
+    /** {@code cashCollected} is required for cash orders (checked by the lifecycle), absent for orders paid by card. */
+    public record DeliverRequest(@DecimalMin("0") @Digits(integer = 10, fraction = 2) BigDecimal cashCollected,
                                  @Size(max = 500) String note) {}
 
     public record FailRequest(@NotBlank(message = "Reason is required") @Size(max = 500) String reason) {}

@@ -14,7 +14,11 @@ import com.atlasna.catalog.product.dto.AdminProductResponse;
 import com.atlasna.catalog.common.LocalizedText;
 import com.atlasna.catalog.product.dto.ProductRequest;
 import com.atlasna.catalog.product.dto.ProductResponse;
+import com.atlasna.catalog.common.Actor;
+import com.atlasna.catalog.common.FieldChanges;
+import com.atlasna.catalog.product.CatalogChanged;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -24,6 +28,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -42,6 +47,7 @@ public class ProductService {
     private final ProductMapper mapper;
     private final StoreSettingsService settings;
     private final InventoryService inventory;
+    private final ApplicationEventPublisher events;
 
     // ---------- public ----------
 
@@ -49,7 +55,7 @@ public class ProductService {
     public Page<ProductResponse> search(ProductFilter filter, Pageable pageable) {
         validateQuery(filter.q());
         var spec = ProductSpecifications.publiclyVisible().and(ProductSpecifications.matching(filter));
-        return productRepository.findAll(spec, pageable).map(mapper::toPublic);
+        return find(spec, filter, pageable).map(mapper::toPublic);
     }
 
     /** Missing and hidden (inactive product or category) look the same: 404, so nothing leaks. */
@@ -69,12 +75,20 @@ public class ProductService {
                 .orElseThrow(() -> ApiException.notFound("PRODUCT_NOT_FOUND", "Product '" + slug + "' not found"));
     }
 
+    /** With a search text, the best matches come first (then the requested sort); otherwise the requested sort. */
+    private Page<Product> find(org.springframework.data.jpa.domain.Specification<Product> spec, ProductFilter filter, Pageable pageable) {
+        if (filter.q() == null || filter.q().isBlank()) return productRepository.findAll(spec, pageable);
+        var ranked = spec.and(ProductSpecifications.rankedBy(filter.q(), pageable.getSort()));
+        return productRepository.findAll(ranked,
+                org.springframework.data.domain.PageRequest.of(pageable.getPageNumber(), pageable.getPageSize()));
+    }
+
     // ---------- admin ----------
 
     @Transactional(readOnly = true)
     public Page<AdminProductResponse> adminSearch(ProductFilter filter, Pageable pageable) {
         validateQuery(filter.q());
-        return productRepository.findAll(ProductSpecifications.matching(filter), pageable).map(mapper::toAdmin);
+        return find(ProductSpecifications.matching(filter), filter, pageable).map(mapper::toAdmin);
     }
 
     @Transactional(readOnly = true)
@@ -93,6 +107,7 @@ public class ProductService {
         Product saved = productRepository.saveAndFlush(product);
         // The starting stock is the product's first ledger entry (stock_quantity = sum of movements).
         inventory.recordCatalogChange(saved.getId(), saved.getStockQuantity(), StockReason.OPENING, null, "Product created");
+        changed(saved.getId(), "PRODUCT_CREATED", Map.of(), snapshot(saved));
         return mapper.toAdmin(saved);
     }
 
@@ -113,26 +128,63 @@ public class ProductService {
         validateRules(request);
         product.setSku(resolveSku(request.sku(), category.getType(), id));
         BigDecimal stockBefore = product.getStockQuantity();
+        Map<String, Object> before = snapshot(product);
         apply(product, request, category); // slug deliberately untouched: URLs stay stable after a rename
         // Flush now so the response carries the incremented version and new updatedAt.
         Product saved = productRepository.saveAndFlush(product);
         // A stock change through the product form is a manual count correction: keep the ledger complete.
         inventory.recordCatalogChange(id, saved.getStockQuantity().subtract(stockBefore), StockReason.ADJUSTMENT, null,
                 "Product edit");
+        changed(id, "PRODUCT_UPDATED", before, snapshot(saved));
         return mapper.toAdmin(saved);
     }
 
     /** Soft delete: hidden from the public, kept for order history, restorable. Idempotent. */
     @Transactional
     public void softDelete(Long id) {
-        getOrThrow(id).setActive(false);
+        Product product = getOrThrow(id);
+        boolean wasActive = product.isActive();
+        product.setActive(false);
+        changed(id, "PRODUCT_DELETED", Map.of("active", wasActive), Map.of("active", false));
     }
 
     @Transactional
     public AdminProductResponse restore(Long id) {
         Product product = getOrThrow(id);
+        boolean wasActive = product.isActive();
         product.setActive(true);
+        changed(id, "PRODUCT_RESTORED", Map.of("active", wasActive), Map.of("active", true));
         return mapper.toAdmin(productRepository.saveAndFlush(product));
+    }
+
+    /**
+     * Public views (and their cache) must follow, and the audit log records who changed which fields. The cache is
+     * invalidated after commit (CatalogCacheInvalidator); the audit entry is written asynchronously (AuditLogWriter).
+     */
+    private void changed(long productId, String action, Map<String, Object> before, Map<String, Object> after) {
+        FieldChanges.Diff diff = FieldChanges.diff(before, after);
+        events.publishEvent(new CatalogChanged("PRODUCT", productId, action, diff.before(), diff.after(), Actor.current()));
+    }
+
+    private static Map<String, Object> snapshot(Product p) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("sku", p.getSku());
+        m.put("barcode", p.getBarcode());
+        m.put("nameFr", p.getNameFr());
+        m.put("nameAr", p.getNameAr());
+        m.put("brand", p.getBrand());
+        m.put("categoryId", p.getCategory() == null ? null : p.getCategory().getId());
+        m.put("price", p.getPrice());
+        m.put("compareAtPrice", p.getCompareAtPrice());
+        m.put("soldBy", p.getSoldBy());
+        m.put("quantityStep", p.getQuantityStep());
+        m.put("unitWeightGrams", p.getUnitWeightGrams());
+        m.put("stockQuantity", p.getStockQuantity());
+        m.put("lowStockThreshold", p.getLowStockThreshold());
+        m.put("perishable", p.isPerishable());
+        m.put("featured", p.isFeatured());
+        m.put("active", p.isActive());
+        return m;
     }
 
     // ---------- rules ----------

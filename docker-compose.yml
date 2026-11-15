@@ -1,5 +1,6 @@
-# Local development database only. Start: docker compose up -d   Stop: docker compose down
+# Local development services only. Start: docker compose up -d   Stop: docker compose down
 # Wipe all dev data: docker compose down -v (Flyway rebuilds the schema on next app start).
+# Postgres = the source of truth · Redis = cache, rate limits, refresh tokens · MongoDB = audit log only.
 # Credentials here match application-dev.yml and are not used in any real environment.
 services:
   postgres:
@@ -20,5 +21,39 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: atlasna-redis
+    restart: unless-stopped
+    # Password even locally, so the app is configured the way it will be in the cloud.
+    # No persistence: everything in Redis can be rebuilt (cache) or is short-lived (tokens, rate-limit buckets).
+    command: ["redis-server", "--requirepass", "atlasna_dev_redis", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "atlasna_dev_redis", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mongo:
+    image: mongo:8.0
+    container_name: atlasna-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: atlasna
+      MONGO_INITDB_ROOT_PASSWORD: atlasna_dev_password
+      MONGO_INITDB_DATABASE: atlasna
+    ports:
+      - "27017:27017"
+    volumes:
+      - atlasna_mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   atlasna_pgdata:
+  atlasna_mongodata:
