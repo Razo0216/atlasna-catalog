@@ -1,6 +1,7 @@
 package com.atlasna.catalog.order.service;
 
 import com.atlasna.catalog.common.exception.ApiException;
+import com.atlasna.catalog.delivery.DeliveryApi;
 import com.atlasna.catalog.order.domain.Cart;
 import com.atlasna.catalog.order.domain.CartItem;
 import com.atlasna.catalog.order.domain.CartRepository;
@@ -36,6 +37,7 @@ public class CartService {
     private final CartRepository carts;
     private final CatalogApi catalog;
     private final NamedParameterJdbcTemplate jdbc;
+    private final DeliveryApi delivery;
 
     public record ItemInput(long productId, BigDecimal quantity) {}
 
@@ -183,6 +185,7 @@ public class CartService {
             lines.add(new CartLine(p.id(), views.get(p.id()), p.name(), item.getQuantity(), item.getSubstitutionPolicy(),
                     p.price(), lineTotal, warnings));
         }
-        return new CartResponse(lines, subtotal, weight, issues, !lines.isEmpty() && issues.isEmpty());
+        return new CartResponse(lines, subtotal, weight, delivery.settings().maxOrderWeightGrams(), issues,
+                !lines.isEmpty() && issues.isEmpty());
     }
 }

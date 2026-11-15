@@ -134,7 +134,7 @@ Another user's address id → `404 ADDRESS_NOT_FOUND`. The first address becomes
 { "items": [ { "productId": 9, "product": ProductResponse | null /* null when no longer public */, "name": {"fr":"Tomates","ar":"طماطم"},
                "quantity": 1.5, "substitutionPolicy": "CALL_ME", "unitPrice": 80.00, "lineTotal": 120.00,
                "warnings": [ "PRICE_CHANGED" | "LOW_STOCK" | "UNAVAILABLE" ] } ],
-  "subtotal": 120.00, "totalWeightGrams": 1500,
+  "subtotal": 120.00, "totalWeightGrams": 1500, "maxWeightGrams": 15000,   // the store's order weight cap (settings)
   "issues": [ { "productId": 12, "code": "UNAVAILABLE" | "QUANTITY_EXCEEDS_STOCK" } ],   // these block checkout
   "checkoutReady": true }
 ```

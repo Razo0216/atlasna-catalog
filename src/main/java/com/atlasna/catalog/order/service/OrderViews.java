@@ -29,8 +29,9 @@ public final class OrderViews {
     /** A problem that blocks checkout until the customer fixes the line. */
     public record CartIssue(long productId, String code) {}
 
-    public record CartResponse(List<CartLine> items, BigDecimal subtotal, int totalWeightGrams, List<CartIssue> issues,
-                               boolean checkoutReady) {}
+    /** {@code maxWeightGrams} is the store's order weight cap, so the client can show a meter without hard-coding it. */
+    public record CartResponse(List<CartLine> items, BigDecimal subtotal, int totalWeightGrams, int maxWeightGrams,
+                               List<CartIssue> issues, boolean checkoutReady) {}
 
     /** A guest-cart line that could not be merged as asked. */
     public record MergeNote(long productId, String reason, BigDecimal requested, BigDecimal added) {}
