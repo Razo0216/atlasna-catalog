@@ -7,6 +7,16 @@
 | **Read first** | `00-MASTER-PLAN.md`, `01-CONVENTIONS.md` §5–6, `02-…` §2–3 (roles matrix), `03-API-CONTRACT.md` §3–5 |
 | **Estimate** | 3 weeks |
 
+> **Status: done (2026-11-16)** on branches `phase-6-admin` (frontend) and `phase-6-backend` (backend).
+> Deviations and additions, decided while building:
+> - Step 9 (audit log) was built during step 3 as the data-table kit's first real screen.
+> - Backend additions this phase needed: refresh-token **grace window** (a reload during a refresh logged users out;
+>   ADR-0009), access token **15 min**, `GET /api/admin/drivers` (STAFF can assign but couldn't list drivers),
+>   `enabled`/`createdAt` on admin user views, ledger `?reason=` filter, dashboard + reports, driver day summary.
+> - Staff/drivers with a temporary password are forced through `/account/password` (the backend flag wasn't enforced).
+> - Also delivered from the saved to-dos: card payment UI (Phase 5 API), the mountain logo, the Algerian landmarks hero.
+> - Realtime (SSE) and a full offline PWA stay in Phase 8; the driver view already queues and retries its actions.
+
 ## 1. Goal
 The owner and staff can **run the store from a browser**: manage catalog, stock, lots and expiry; process orders on a live board; assign drivers; manage zones, slots and settings; read reports and the audit log.
 Drivers get a **phone-first** screen for their deliveries. Customers never download admin code.

@@ -261,16 +261,24 @@ public class InventoryService {
 
     @Transactional(readOnly = true)
     public Page<StockMovementView> movements(long productId, Pageable pageable) {
+        return movements(productId, null, pageable);
+    }
+
+    /** The product's ledger, newest first; {@code reason} null = every reason. */
+    @Transactional(readOnly = true)
+    public Page<StockMovementView> movements(long productId, StockReason reason, Pageable pageable) {
         requireProduct(productId);
         MapSqlParameterSource p = new MapSqlParameterSource("id", productId)
+                .addValue("reason", reason == null ? null : reason.name())
                 .addValue("limit", pageable.getPageSize()).addValue("offset", pageable.getOffset());
+        String where = "WHERE product_id = :id" + (reason == null ? "" : " AND reason = :reason");
         List<StockMovementView> rows = jdbc.query("""
                 SELECT id, delta, reason, order_id, actor_id, note, at FROM stock_movements
-                WHERE product_id = :id ORDER BY at DESC, id DESC LIMIT :limit OFFSET :offset""", p,
+                %s ORDER BY at DESC, id DESC LIMIT :limit OFFSET :offset""".formatted(where), p,
                 (rs, i) -> new StockMovementView(rs.getLong("id"), rs.getBigDecimal("delta"),
                         StockReason.valueOf(rs.getString("reason")), (Long) rs.getObject("order_id"),
                         (Long) rs.getObject("actor_id"), rs.getString("note"), rs.getTimestamp("at").toInstant()));
-        Long total = jdbc.queryForObject("SELECT count(*) FROM stock_movements WHERE product_id = :id", p, Long.class);
+        Long total = jdbc.queryForObject("SELECT count(*) FROM stock_movements " + where, p, Long.class);
         return new PageImpl<>(rows, pageable, total == null ? 0 : total);
     }
 

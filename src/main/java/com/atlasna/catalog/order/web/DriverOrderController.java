@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
@@ -43,6 +44,13 @@ public class DriverOrderController {
     @GetMapping
     public List<AdminOrderSummary> queue(@AuthenticationPrincipal User driver) {
         return queries.driverQueue(driver);
+    }
+
+    /** The end-of-day summary: delivered, failed, remaining and cash collected for one delivery day (default today). */
+    @GetMapping("/summary")
+    public OrderQueryService.DriverDaySummary summary(@AuthenticationPrincipal User driver,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate date) {
+        return queries.driverDay(driver, date == null ? java.time.LocalDate.now(java.time.ZoneId.of("Africa/Algiers")) : date);
     }
 
     @GetMapping("/{orderNumber}")

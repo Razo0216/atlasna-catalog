@@ -73,6 +73,7 @@ class RefreshTokenTests extends OrderTestSupport {
         register();
         String first = cookie(login().andReturn().getResponse());
         String second = cookie(refresh(first).andReturn().getResponse());
+        endGraceWindows(); // later than the grace window
 
         // An attacker replays the stolen first token: refused, and the session is closed for everyone.
         MockHttpServletResponse reused = refresh(first).andExpect(status().isUnauthorized())
@@ -87,8 +88,44 @@ class RefreshTokenTests extends OrderTestSupport {
         String phone = cookie(login().andReturn().getResponse());
         String laptop = cookie(login().andReturn().getResponse());
         refresh(phone).andExpect(status().isOk());
+        endGraceWindows();
         refresh(phone).andExpect(status().isUnauthorized()); // reuse on the phone's family
         refresh(laptop).andExpect(status().isOk()); // the laptop's session lives on
+    }
+
+    @Test
+    void lostResponse_theOldTokenWorksOnceMoreWithinTheGraceWindow() throws Exception {
+        register();
+        String first = cookie(login().andReturn().getResponse());
+        String lost = cookie(refresh(first).andExpect(status().isOk()).andReturn().getResponse()); // never reached the browser
+
+        // The reloaded page sends the old cookie again: no theft alarm, a fresh successor instead.
+        String third = cookie(refresh(first).andExpect(status().isOk()).andReturn().getResponse());
+        assertThat(third).isNotEqualTo(lost);
+        // The orphaned successor is gone (one live token per family)…
+        refresh(lost).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("REFRESH_TOKEN_INVALID"));
+        // …and the session goes on with the new one.
+        refresh(third).andExpect(status().isOk());
+    }
+
+    @Test
+    void theGraceIsOneExtraUse_aThirdPresentationIsReuse() throws Exception {
+        register();
+        String first = cookie(login().andReturn().getResponse());
+        refresh(first).andExpect(status().isOk());
+        String graced = cookie(refresh(first).andExpect(status().isOk()).andReturn().getResponse());
+        refresh(first).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("REFRESH_TOKEN_REUSED"));
+        refresh(graced).andExpect(status().isUnauthorized()); // the family was revoked
+    }
+
+    @Test
+    void noGraceAfterLogout() throws Exception {
+        register();
+        String first = cookie(login().andReturn().getResponse());
+        String second = cookie(refresh(first).andReturn().getResponse());
+        mockMvc.perform(post("/api/auth/logout").header("X-Atlasna-Refresh", "1").cookie(new Cookie("atlasna_refresh", second)))
+                .andExpect(status().isNoContent());
+        refresh(first).andExpect(status().isUnauthorized()); // within the window, but the session is closed
     }
 
     @Test
@@ -178,6 +215,12 @@ class RefreshTokenTests extends OrderTestSupport {
     }
 
     // ---------- helpers ----------
+
+    /** As if the grace window (30 s) had passed for every consumed token. */
+    private void endGraceWindows() {
+        var keys = redis.keys("atlasna:v1:refresh-grace:*");
+        if (keys != null && !keys.isEmpty()) redis.delete(keys);
+    }
 
     private ResultActions register() throws Exception {
         String phone = "06" + String.format("%08d", Math.abs(email.hashCode()) % 100_000_000);

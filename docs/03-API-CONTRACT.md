@@ -250,10 +250,52 @@ expiryDate? (required for perishables, not in the past), lotCode?, note?}` → `
 `GET /api/products?q=` (and the admin list) now ignores accents and Arabic diacritics/letter variants, tolerates typos
 for word queries (≥ 3 letters), and ranks best matches first (then the requested sort). Shapes unchanged.
 
-## 6. Later phases (shapes defined when the phase starts)
+## 6. Back-office & driver view — Phase 6 (built 2026-11-16; frontend Phase 6 consumes it)
+
+### Sessions (ADR-0009, updated)
+- Access token: **15 minutes** (was 60 while the storefront kept it in `localStorage`). The SPA keeps it in memory and
+  refreshes silently with the `atlasna_refresh` cookie (`POST /api/auth/refresh`, header `X-Atlasna-Refresh: 1`).
+- **Grace window:** a refresh token consumed less than `atlasna.refresh-token.reuse-grace` (30 s) ago may be presented
+  **once** more (lost response: page reloaded, signal dropped) → `200` with a new token; the orphaned successor is
+  revoked. A third presentation, a presentation after the window, or after logout = `401 REFRESH_TOKEN_REUSED|INVALID`.
+- `POST /api/auth/change-password {currentPassword, newPassword ≥ 8}` → `204`, ends **every** session of the account
+  (the SPA logs back in with the new password). Accounts created by an admin have `mustChangePassword: true` until then.
+
+### Users (ADMIN)
+`GET /api/admin/users?role&page&size` and `PATCH /api/admin/users/{id} {enabled}` now return
+`AdminUserView = {id, fullName, email, phone, role, mustChangePassword, enabled, createdAt}` (never the password hash).
+`POST /api/admin/users {fullName, email, phone?, role: STAFF|DRIVER}` → `201 {user, temporaryPassword}` (shown once).
+
+### Drivers directory (STAFF, ADMIN)
+`GET /api/admin/drivers` → `[{id, fullName, phone}]` — active drivers only, for the order board's "assign driver".
+
+### Stock ledger filter (STAFF, ADMIN)
+`GET /api/admin/products/{id}/stock-movements?reason=OPENING|SALE|CANCEL_RESTORE|RESTOCK|ADJUSTMENT|EXPIRED&page&size`
+(`reason` optional; an unknown value → `400`).
+
+### Dashboard & reports (ADMIN only — revenue and per-driver cash are the owner's business)
+Days are **delivery days** (`slot_date`, Africa/Algiers). Ranges are inclusive, default the last 30 days, at most 366
+(`400` on `from > to` or a longer range). "Expected" = totals of non-cancelled orders; "collected" = cash collected or
+card PAID.
+- `GET /api/admin/dashboard?date=` (default today) → `{date, ordersByStatus: {STATUS: n}, revenue: {expected, collected},
+  slots: [{slotId, start, end, capacity, booked}], toConfirm, failedDeliveries, lowStockCount, expiringCount}`
+- `GET /api/admin/reports/sales?from&to` → `[{day, orders, delivered, cancelled, expected, collected}]`
+- `GET /api/admin/reports/top-products?from&to&limit=20 (1–100)` → `[{productId, sku, nameFr, nameAr, soldBy, quantity,
+  revenue, orders}]` (delivered orders, packed quantities; a substitute counts as itself)
+- `GET /api/admin/reports/by-category?from&to` → `[{categoryId, nameFr, nameAr, type, revenue, orders}]`
+- `GET /api/admin/reports/by-zone?from&to` → `[{zoneId, nameFr, nameAr, orders, revenue, deliveryFees}]`
+- `GET /api/admin/reports/cash-by-driver?from&to` → `[{driverId, fullName, deliveries, failed, cashCollected}]`
+- `GET /api/admin/reports/low-stock`, `GET /api/admin/reports/expiring?days=7` — aliases of the `/inventory/…` reports.
+
+### Driver (DRIVER, own orders only — anything else is 404)
+`GET /api/driver/orders/summary?date=` (default today) → `{date, delivered, failed, remaining, cashCollected, orders:
+AdminOrderSummary[]}` — `cashCollected` = cash this driver collected that day (card payments excluded).
+`start` / `deliver` / `fail` are unchanged. A repeated action (retry after a lost response) gets
+`409 INVALID_STATE_TRANSITION`; clients re-read the order and treat "already in the target status" as success.
+
+## 7. Later phases (shapes defined when the phase starts)
 
 | Phase | Endpoints |
 |---|---|
-| 6 | `GET /api/admin/reports/{sales\|top-products\|low-stock\|expiring}` · `GET /api/admin/dashboard` |
 | 7–8 | `GET /api/orders/{n}/events` (SSE) · `GET /api/me/notifications`, `POST …/{id}/read` · `POST /api/me/push-subscriptions` |
 | 13–14 | `POST /api/assistant/chat` (SSE stream of tokens + structured cards) · `POST /api/assistant/feedback` |

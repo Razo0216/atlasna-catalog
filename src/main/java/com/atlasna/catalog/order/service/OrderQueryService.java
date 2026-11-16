@@ -94,6 +94,34 @@ public class OrderQueryService {
                 o.getFailureReason(), o.getTotalWeightGrams(), o.getVersion());
     }
 
+    /**
+     * The driver's day (Phase 6): what they delivered, what failed, what's left, and the cash they collected — the
+     * amount they hand over to the shop. Card payments are not cash and don't count.
+     */
+    public record DriverDaySummary(LocalDate date, int delivered, int failed, int remaining, BigDecimal cashCollected,
+                                   List<AdminOrderSummary> orders) {}
+
+    @Transactional(readOnly = true)
+    public DriverDaySummary driverDay(User driver, LocalDate date) {
+        List<Order> day = orders.findByAssignedDriverIdAndSlotDateOrderBySlotStartAscIdAsc(driver.getId(), date);
+        int delivered = 0, failed = 0, remaining = 0;
+        BigDecimal cash = BigDecimal.ZERO;
+        for (Order o : day) {
+            switch (o.getStatus()) {
+                case DELIVERED -> delivered++;
+                case DELIVERY_FAILED -> failed++;
+                case READY_FOR_DELIVERY, OUT_FOR_DELIVERY -> remaining++;
+                default -> { }
+            }
+            var p = o.getPayment();
+            if (p != null && p.getStatus() == com.atlasna.catalog.order.domain.PaymentStatus.COLLECTED
+                    && driver.getId().equals(p.getCollectedBy())) {
+                cash = cash.add(p.getAmount());
+            }
+        }
+        return new DriverDaySummary(date, delivered, failed, remaining, cash, day.stream().map(mapper::toAdminSummary).toList());
+    }
+
     @Transactional(readOnly = true)
     public List<AdminOrderSummary> driverQueue(User driver) {
         return orders.findByAssignedDriverIdAndStatusInOrderBySlotDateAscSlotStartAsc(driver.getId(),

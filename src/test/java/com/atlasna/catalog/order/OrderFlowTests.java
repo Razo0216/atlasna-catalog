@@ -379,7 +379,36 @@ class OrderFlowTests extends OrderTestSupport {
         mockMvc.perform(get("/api/admin/products/" + p + "/stock-movements").header("Authorization", bearer(staff)))
                 .andExpect(jsonPath("$.content[0].reason").value("RESTOCK"))
                 .andExpect(jsonPath("$.content[1].reason").value("OPENING"));
+        // Filter by reason (Phase 6 back-office ledger): only those rows, and the total counts only them.
+        mockMvc.perform(get("/api/admin/products/" + p + "/stock-movements?reason=RESTOCK").header("Authorization", bearer(staff)))
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].delta").value(10.0))
+                .andExpect(jsonPath("$.page.totalElements").value(1));
+        mockMvc.perform(get("/api/admin/products/" + p + "/stock-movements?reason=OPENING").header("Authorization", bearer(staff)))
+                .andExpect(jsonPath("$.content[*].reason", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("OPENING"))));
+        mockMvc.perform(get("/api/admin/products/" + p + "/stock-movements?reason=NOPE").header("Authorization", bearer(staff)))
+                .andExpect(status().isBadRequest());
         assertLedgerHolds();
+    }
+
+    @Test
+    void staffSeeTheActiveDriversForTheAssignPicker_withoutAccountDetails() throws Exception {
+        User staff = user(Role.STAFF), driver = user(Role.DRIVER), customer = customer();
+        String body = mockMvc.perform(get("/api/admin/drivers").header("Authorization", bearer(staff)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(body).contains("\"id\":" + driver.getId()).doesNotContain("\"id\":" + customer.getId() + ",")
+                .doesNotContain("email").doesNotContain("@");
+    }
+
+    @Test
+    void theUsersListShowsWhetherAnAccountIsEnabled() throws Exception {
+        User admin = user(Role.ADMIN), driver = user(Role.DRIVER);
+        mockMvc.perform(patch("/api/admin/users/" + driver.getId()).header("Authorization", bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false)).andExpect(jsonPath("$.passwordHash").doesNotExist());
+        String list = mockMvc.perform(get("/api/admin/users?role=DRIVER&size=100").header("Authorization", bearer(admin)))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(list).contains("\"enabled\":false").doesNotContain("passwordHash").doesNotContain("$2a$");
     }
 
     @Test

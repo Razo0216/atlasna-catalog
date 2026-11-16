@@ -75,6 +75,7 @@ class OrderAuthorizationTests extends OrderTestSupport {
                 "{\"driverId\":" + 999999 + "}"),                                                     new int[] {401, 403, 403, 400, 403, 400});
         matrix.put(new Route(HttpMethod.GET, "/api/admin/products/" + productId + "/stock-movements", null),
                                                                                                      new int[] {401, 403, 403, 200, 403, 200});
+        matrix.put(new Route(HttpMethod.GET, "/api/admin/drivers", null),                            new int[] {401, 403, 403, 200, 403, 200});
         matrix.put(new Route(HttpMethod.GET, "/api/admin/settings", null),                           new int[] {401, 403, 403, 403, 403, 200});
         matrix.put(new Route(HttpMethod.GET, "/api/admin/delivery/zones", null),                     new int[] {401, 403, 403, 403, 403, 200});
         matrix.put(new Route(HttpMethod.GET, "/api/admin/delivery/slots", null),                     new int[] {401, 403, 403, 403, 403, 200});
