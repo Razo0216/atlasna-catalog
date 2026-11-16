@@ -18,8 +18,9 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     Page<Order> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
     List<Order> findByAssignedDriverIdAndStatusInOrderBySlotDateAscSlotStartAsc(Long driverId, List<OrderStatus> statuses);
 
-    /** A driver's orders for one delivery day (the end-of-day cash summary). */
-    List<Order> findByAssignedDriverIdAndSlotDateOrderBySlotStartAscIdAsc(Long driverId, java.time.LocalDate slotDate);
+    /** A driver's orders around a day (the end-of-day summary looks at what happened that day). */
+    List<Order> findByAssignedDriverIdAndSlotDateBetweenOrderBySlotDateAscSlotStartAscIdAsc(Long driverId, java.time.LocalDate from,
+                                                                                          java.time.LocalDate to);
     boolean existsByOrderNumber(String orderNumber);
 
     /** The order behind a gateway checkout id (webhooks name the checkout, not the order). */

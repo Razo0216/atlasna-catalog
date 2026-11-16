@@ -95,31 +95,38 @@ public class OrderQueryService {
     }
 
     /**
-     * The driver's day (Phase 6): what they delivered, what failed, what's left, and the cash they collected — the
-     * amount they hand over to the shop. Card payments are not cash and don't count.
+     * The driver's day (Phase 6), by what actually happened that day in Annaba — not by the orders' slot dates (an
+     * order can be delivered early or the day after): deliveries and failures recorded that day, cash this driver
+     * collected that day (what they hand over; card payments aren't cash), and what is still assigned to them.
      */
     public record DriverDaySummary(LocalDate date, int delivered, int failed, int remaining, BigDecimal cashCollected,
                                    List<AdminOrderSummary> orders) {}
 
     @Transactional(readOnly = true)
     public DriverDaySummary driverDay(User driver, LocalDate date) {
-        List<Order> day = orders.findByAssignedDriverIdAndSlotDateOrderBySlotStartAscIdAsc(driver.getId(), date);
+        java.time.ZoneId shop = java.time.ZoneId.of("Africa/Algiers");
+        java.time.Instant start = date.atStartOfDay(shop).toInstant(), end = date.plusDays(1).atStartOfDay(shop).toInstant();
+        java.util.function.Predicate<java.time.Instant> sameDay = at -> at != null && !at.isBefore(start) && at.isBefore(end);
+        List<Order> around = orders.findByAssignedDriverIdAndSlotDateBetweenOrderBySlotDateAscSlotStartAscIdAsc(
+                driver.getId(), date.minusDays(14), date.plusDays(14));
         int delivered = 0, failed = 0, remaining = 0;
         BigDecimal cash = BigDecimal.ZERO;
-        for (Order o : day) {
-            switch (o.getStatus()) {
-                case DELIVERED -> delivered++;
-                case DELIVERY_FAILED -> failed++;
-                case READY_FOR_DELIVERY, OUT_FOR_DELIVERY -> remaining++;
-                default -> { }
-            }
+        List<Order> touched = new ArrayList<>();
+        for (Order o : around) {
+            boolean deliveredToday = o.getHistory().stream().anyMatch(h -> h.getToStatus() == OrderStatus.DELIVERED && sameDay.test(h.getAt()));
+            boolean failedToday = o.getHistory().stream().anyMatch(h -> h.getToStatus() == OrderStatus.DELIVERY_FAILED && sameDay.test(h.getAt()));
+            boolean open = o.getStatus() == OrderStatus.READY_FOR_DELIVERY || o.getStatus() == OrderStatus.OUT_FOR_DELIVERY;
+            if (deliveredToday) delivered++;
+            if (failedToday) failed++;
+            if (open) remaining++;
             var p = o.getPayment();
             if (p != null && p.getStatus() == com.atlasna.catalog.order.domain.PaymentStatus.COLLECTED
-                    && driver.getId().equals(p.getCollectedBy())) {
+                    && driver.getId().equals(p.getCollectedBy()) && sameDay.test(p.getCollectedAt())) {
                 cash = cash.add(p.getAmount());
             }
+            if (deliveredToday || failedToday || open) touched.add(o);
         }
-        return new DriverDaySummary(date, delivered, failed, remaining, cash, day.stream().map(mapper::toAdminSummary).toList());
+        return new DriverDaySummary(date, delivered, failed, remaining, cash, touched.stream().map(mapper::toAdminSummary).toList());
     }
 
     @Transactional(readOnly = true)

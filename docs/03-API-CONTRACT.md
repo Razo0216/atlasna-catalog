@@ -289,7 +289,8 @@ card PAID.
 
 ### Driver (DRIVER, own orders only — anything else is 404)
 `GET /api/driver/orders/summary?date=` (default today) → `{date, delivered, failed, remaining, cashCollected, orders:
-AdminOrderSummary[]}` — `cashCollected` = cash this driver collected that day (card payments excluded).
+AdminOrderSummary[]}` — by what happened **that day** (not the orders' slot dates): deliveries and failures recorded that
+day, cash this driver collected that day (card payments excluded), and the orders still assigned (`remaining`).
 `start` / `deliver` / `fail` are unchanged. A repeated action (retry after a lost response) gets
 `409 INVALID_STATE_TRANSITION`; clients re-read the order and treat "already in the target status" as success.
 

@@ -63,13 +63,16 @@ class ReportsTests extends OrderTestSupport {
                 .andExpect(jsonPath("$[0].deliveries").value(1))
                 .andExpect(jsonPath("$[0].cashCollected").value(total1.doubleValue()));
         // The driver's own end-of-day summary: the cash they hand over. Another driver sees nothing of it.
-        mockMvc.perform(get("/api/driver/orders/summary?date=" + day).header("Authorization", bearer(driver)))
+        // (by the day it happened — today — not by the order's slot date, which is tomorrow)
+        mockMvc.perform(get("/api/driver/orders/summary").header("Authorization", bearer(driver)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.delivered").value(1))
                 .andExpect(jsonPath("$.remaining").value(0))
                 .andExpect(jsonPath("$.cashCollected").value(total1.doubleValue()))
                 .andExpect(jsonPath("$.orders.length()").value(1));
-        mockMvc.perform(get("/api/driver/orders/summary?date=" + day).header("Authorization", bearer(user(Role.DRIVER))))
+        mockMvc.perform(get("/api/driver/orders/summary?date=" + day).header("Authorization", bearer(driver)))
+                .andExpect(jsonPath("$.delivered").value(0)); // nothing happened on the slot day itself
+        mockMvc.perform(get("/api/driver/orders/summary").header("Authorization", bearer(user(Role.DRIVER))))
                 .andExpect(jsonPath("$.delivered").value(0)).andExpect(jsonPath("$.cashCollected").value(0));
         mockMvc.perform(get("/api/admin/reports/low-stock").header("Authorization", bearer(admin))).andExpect(status().isOk());
         mockMvc.perform(get("/api/admin/reports/expiring?days=7").header("Authorization", bearer(admin))).andExpect(status().isOk());
