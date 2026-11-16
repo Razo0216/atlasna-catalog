@@ -7,6 +7,16 @@
 | **Read first** | `00-MASTER-PLAN.md`, `01-CONVENTIONS.md` §5–6, `02-…` §2–3 (roles matrix), `03-API-CONTRACT.md` §3–5 |
 | **Estimate** | 3 weeks |
 
+> **Status: done (2026-11-16)** on branches `phase-6-admin` (frontend) and `phase-6-backend` (backend).
+> Deviations and additions, decided while building:
+> - Step 9 (audit log) was built during step 3 as the data-table kit's first real screen.
+> - Backend additions this phase needed: refresh-token **grace window** (a reload during a refresh logged users out;
+>   ADR-0009), access token **15 min**, `GET /api/admin/drivers` (STAFF can assign but couldn't list drivers),
+>   `enabled`/`createdAt` on admin user views, ledger `?reason=` filter, dashboard + reports, driver day summary.
+> - Staff/drivers with a temporary password are forced through `/account/password` (the backend flag wasn't enforced).
+> - Also delivered from the saved to-dos: card payment UI (Phase 5 API), the mountain logo, the Algerian landmarks hero.
+> - Realtime (SSE) and a full offline PWA stay in Phase 8; the driver view already queues and retries its actions.
+
 ## 1. Goal
 The owner and staff can **run the store from a browser**: manage catalog, stock, lots and expiry; process orders on a live board; assign drivers; manage zones, slots and settings; read reports and the audit log.
 Drivers get a **phone-first** screen for their deliveries. Customers never download admin code.
@@ -59,22 +69,40 @@ Filter by entity/actor/date; readable before/after diffs (changed fields only); 
 Large-touch, one-handed UI: **today's assigned orders** in slot order, big customer name, **call** and **navigate** buttons, address + landmark, items summary, amount to collect. Actions: *Start delivery* → *Delivered* (confirm cash collected = total, with an "autre montant" path requiring a reason) or *Failed* (reason picker: no answer / refused / wrong address / other). Works on a slow connection: optimistic UI with queued retries for status actions (idempotent endpoints), clear offline banner. Daily **cash summary** at the end.
 
 ## 4. Required tests
-- [ ] Auth: parallel `401`s trigger **one** refresh; refresh failure logs out; no token in `localStorage`; 401-on-login still not a session end.
-- [ ] `RequireRole` matrix: anonymous / CUSTOMER / STAFF / DRIVER / ADMIN × each area; nav items per role; STAFF cannot reach products or settings pages.
-- [ ] Data table: URL ⇄ state, empty/error/loading, CSV matches the filtered rows.
-- [ ] Product form: bilingual validation, heavy-item message from `PRODUCT_TOO_HEAVY`, `soldBy=UNIT` forbids fractional step, optimistic-lock conflict flow, attributes editor writes the exact JSON the API expects (assert request body in MSW).
-- [ ] Image upload: progress, wrong type/size blocked, server rejection surfaced, order of images persisted.
-- [ ] Orders: only allowed transitions offered; per-kg weighing recomputes totals; `409 INVALID_STATE_TRANSITION` refreshes the card; cancellation requires a reason.
-- [ ] Driver: sees only assigned orders (MSW returns a mix; UI shows backend-filtered list); fail-reason flow; queued retry on transient error uses the same request (idempotent).
-- [ ] RTL: admin tables, board, forms mirrored; `lint:rtl` and `i18n:check` pass for all new strings.
-- [ ] Accessibility: dialogs trap focus, tables have headers, board columns keyboard-reachable, status colours not the only signal.
-- [ ] Bundle: customer entry chunk size unchanged (admin/driver in separate lazy chunks) — add a size check script.
+- [x] Auth: parallel `401`s trigger **one** refresh; refresh failure logs out; no token in `localStorage`; 401-on-login still not a session end.
+- [x] `RequireRole` matrix: anonymous / CUSTOMER / STAFF / DRIVER / ADMIN × each area; nav items per role; STAFF cannot reach products or settings pages.
+- [x] Data table: URL ⇄ state, empty/error/loading, CSV matches the filtered rows.
+- [x] Product form: bilingual validation, heavy-item message from `PRODUCT_TOO_HEAVY`, `soldBy=UNIT` forbids fractional step, optimistic-lock conflict flow, attributes editor writes the exact JSON the API expects (assert request body in MSW).
+- [x] Image upload: progress, wrong type/size blocked, server rejection surfaced, order of images persisted.
+- [x] Orders: only allowed transitions offered; per-kg weighing recomputes totals; `409 INVALID_STATE_TRANSITION` refreshes the card; cancellation requires a reason.
+- [x] Driver: sees only assigned orders (MSW returns a mix; UI shows backend-filtered list); fail-reason flow; queued retry on transient error uses the same request (idempotent).
+- [x] RTL: admin tables, board, forms mirrored; `lint:rtl` and `i18n:check` pass for all new strings.
+- [x] Accessibility: dialogs trap focus, tables have headers, board columns keyboard-reachable, status colours not the only signal.
+- [x] Bundle: customer entry chunk size unchanged (admin/driver in separate lazy chunks) — add a size check script.
 
 ## 5. Acceptance criteria
-- [ ] Owner flow on a laptop and staff/driver flow on a phone, against the real backend: create a product with images in both languages → it appears in the storefront → receive a lot with an expiry → an order arrives → pack it with a weighed quantity → assign a driver → driver delivers and records cash → reports reflect it → audit log shows each admin action.
-- [ ] A STAFF token cannot call admin-only endpoints (try from DevTools) and the UI never offers them.
-- [ ] Customer bundle does not include admin code (inspect the build output).
-- [ ] Security baseline ticked; no `dangerouslySetInnerHTML`; uploads/filenames never rendered unescaped.
+- [x] Owner flow on a laptop and staff/driver flow on a phone, against the real backend: create a product with images in both languages → it appears in the storefront → receive a lot with an expiry → an order arrives → pack it with a weighed quantity → assign a driver → driver delivers and records cash → reports reflect it → audit log shows each admin action.
+- [x] A STAFF token cannot call admin-only endpoints (try from DevTools) and the UI never offers them.
+- [x] Customer bundle does not include admin code (inspect the build output).
+- [x] Security baseline ticked; no `dangerouslySetInnerHTML`; uploads/filenames never rendered unescaped.
+
+### Evidence (2026-11-16)
+- **Tests:** `src/admin/Checklist.test.tsx` (role × area matrix, product form, uploads, 409 refresh, driver retry body,
+  focus trap, Arabic back-office, shared-device sign-out), `src/api/client.test.ts` (4 parallel 401s → 1 refresh),
+  plus the per-screen suites — 370 tests. `npm run check:bundle`: entry chunk 266 kB, no back-office code or texts.
+- **Acceptance run on the real backend:** product "Clémentines d'Annaba" (fr/ar, photo, sold by kg) created → found in
+  the storefront (accent-free search, Arabic name) → lot CLEM-ACC 20 kg expiring in 6 days → order ATL-261116-SZC5 →
+  packed with 2.1 kg weighed (total 2 762,00 DA) → assigned to a new driver created in Users → the driver changed the
+  temporary password on a phone, started and delivered with cash → driver's cash card 2 762,00 DA, reports (top
+  products, cash by driver) and the audit log (product, photos, stock, order, account, password, statuses) all show it.
+- **STAFF token from the outside:** 403 on 13 admin-only endpoints (products, categories, settings, users, zones,
+  audit, dashboard, reports, driver), 200 on the 4 it may use.
+- **Found and fixed during acceptance:** after a sign-out the next person was sent back to the previous user's page
+  (now: no "return to" after a deliberate sign-out, and only to pages the new role may open); the driver's cash card
+  counted by slot date instead of by the day the cash was collected (backend summary fixed); a normal send briefly
+  showed "waiting to be sent".
+- **Known gap, for a backend phase:** the backend does not enforce `mustChangePassword` — a temporary password grants
+  full API access for that role until changed; only the SPA forces the change.
 
 ## 6. Out of scope
 Realtime push (Phase 8) · full PWA/offline for drivers (Phase 8) · e-signature on delivery · route optimisation · payroll.

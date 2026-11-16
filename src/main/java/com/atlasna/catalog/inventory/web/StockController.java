@@ -49,11 +49,12 @@ public class StockController {
 
     @GetMapping("/stock-movements")
     public Page<StockMovementView> movements(@PathVariable long productId,
+                                                   @RequestParam(required = false) StockReason reason,
                                                    @RequestParam(defaultValue = "0") int page,
                                                    @RequestParam(defaultValue = "50") int size) {
         if (page < 0) throw ApiException.invalidField("page", "Page must be 0 or greater");
         if (size < 1 || size > 100) throw ApiException.invalidField("size", "Size must be between 1 and 100");
-        return inventory.movements(productId, PageRequest.of(page, size));
+        return inventory.movements(productId, reason, PageRequest.of(page, size));
     }
 
     public record StockAdjustmentRequest(

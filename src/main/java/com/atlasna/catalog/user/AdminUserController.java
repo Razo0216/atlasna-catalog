@@ -57,6 +57,18 @@ public class AdminUserController {
 
     public record UpdateAccountRequest(@NotNull Boolean enabled) {}
 
+    /**
+     * The back-office's view of an account (Phase 6): what {@link UserResponse} shows, plus whether it can log in and
+     * when it was created — so the users screen can show and toggle "disabled". Never the password hash.
+     */
+    public record AdminUserView(Long id, String fullName, String email, String phone, Role role, boolean mustChangePassword,
+                                boolean enabled, java.time.Instant createdAt) {
+        static AdminUserView from(User u) {
+            return new AdminUserView(u.getId(), u.getFullName(), u.getEmail(), u.getPhone(), u.getRole(), u.isMustChangePassword(),
+                    u.isEnabled(), u.getCreatedAt());
+        }
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Transactional
@@ -80,17 +92,17 @@ public class AdminUserController {
 
     @GetMapping
     @Transactional(readOnly = true)
-    public Page<UserResponse> list(@RequestParam(required = false) Role role, @RequestParam(defaultValue = "0") int page,
+    public Page<AdminUserView> list(@RequestParam(required = false) Role role, @RequestParam(defaultValue = "0") int page,
                                    @RequestParam(defaultValue = "50") int size) {
         if (page < 0 || size < 1 || size > 100) throw ApiException.invalidField("size", "Size must be between 1 and 100");
         PageRequest p = PageRequest.of(page, size);
-        return (role == null ? users.findAllByOrderByIdAsc(p) : users.findByRoleOrderByIdAsc(role, p)).map(UserResponse::from);
+        return (role == null ? users.findAllByOrderByIdAsc(p) : users.findByRoleOrderByIdAsc(role, p)).map(AdminUserView::from);
     }
 
     /** Enable or disable an account. A disabled account can't log in and its tokens stop working at once. */
     @PatchMapping("/{id}")
     @Transactional
-    public UserResponse update(@PathVariable long id, @Valid @RequestBody UpdateAccountRequest r, @AuthenticationPrincipal User admin) {
+    public AdminUserView update(@PathVariable long id, @Valid @RequestBody UpdateAccountRequest r, @AuthenticationPrincipal User admin) {
         User user = users.findById(id).orElseThrow(() -> ApiException.notFound("USER_NOT_FOUND", "User " + id + " not found"));
         if (user.getId().equals(admin.getId()) && !r.enabled()) {
             throw ApiException.businessRule("VALIDATION_FAILED", "You can't disable your own account");
@@ -102,7 +114,7 @@ public class AdminUserController {
             events.publishEvent(new UserAccountChanged(user.getId(), r.enabled() ? "USER_ENABLED" : "USER_DISABLED",
                     user.getRole().name(), com.atlasna.catalog.common.Actor.current()));
         }
-        return UserResponse.from(user);
+        return AdminUserView.from(user);
     }
 
     private String temporaryPassword() {

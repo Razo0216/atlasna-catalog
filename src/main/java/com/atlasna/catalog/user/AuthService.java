@@ -193,7 +193,7 @@ public class AuthService {
                     "Your session has expired. Please log in again");
             case REUSED -> throw new ApiException(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_REUSED",
                     "This session was used from elsewhere and has been closed. Please log in again");
-            case OK -> { }
+            case OK, GRACE -> { }
         }
         User user = userRepository.findById(consumed.userId()).orElse(null);
         if (user == null || !user.isEnabled()) {

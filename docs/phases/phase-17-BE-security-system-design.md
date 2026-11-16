@@ -109,3 +109,9 @@ External audit/certification · bug bounty · multi-region active-active · buil
 6. State your RPO and RTO and how you measured them. What would you change to halve the RTO?
 7. Where does this system choose consistency over availability, and where the reverse? Defend each.
 8. If the store wanted to add third-party sellers next year, which parts of the design would hold and which would need rework?
+
+## Carried over from Phase 6 (2026-11-16)
+- [ ] **Enforce `mustChangePassword` on the server.** Accounts created by an admin get a temporary password; today only
+  the SPA forces the change (`/account/password`). Until changed, the backend should accept only
+  `POST /api/auth/change-password`, `GET /api/auth/me`, refresh and logout for that account (e.g. a filter returning
+  `403 PASSWORD_CHANGE_REQUIRED`), and the temporary password should expire (e.g. 72 h).

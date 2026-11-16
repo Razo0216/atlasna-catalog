@@ -62,6 +62,21 @@ and orders, so sessions must last weeks — which makes theft worse if we simply
   set of families (for "log out everywhere").
 - A browser with two tabs refreshing at the same moment would trip reuse detection and log the user out: the storefront
   (Phase 6) must run refreshes single-flight and share the result between tabs.
-- The access token stays at 60 minutes until the storefront adopts refresh (Phase 6), then drops to 15.
+- The access token stayed at 60 minutes until the storefront adopted refresh; since Phase 6 it is **15 minutes** (`atlasna.jwt.expiration-minutes`).
 - If Redis is down at login/sign-up the user is still logged in, just without a refresh cookie (logged warning).
 - Dev profile: `cookie-secure: false`, because Safari refuses `Secure` cookies on `http://localhost`.
+
+## Grace window (Phase 6, 2026-11-15)
+Found while testing the back-office: if the page reloads (or the phone loses signal) while `POST /api/auth/refresh` is
+in flight, the server has already rotated the token but the browser never stores the successor cookie. The next refresh
+sends the old token and strict reuse detection revoked the whole session — an honest user logged out.
+
+**Decision:** a just-consumed token may be presented **once** more within `atlasna.refresh-token.reuse-grace`
+(default 30 s). The Lua script keeps `atlasna:v1:refresh-grace:{hash}` for that window and deletes it on its one use;
+the store then revokes the orphaned successor and issues a new token, so the family keeps exactly one live token.
+A third presentation, or any presentation after the window, is reuse as before (family revoked). No grace if the
+family was revoked meanwhile (logout, password change, disabled account).
+
+**Trade-off:** a thief replaying a stolen token within those 30 s gets one fresh token and the real user's next
+refresh fails (they log in again, which starts a new family). This is the usual "reuse interval" compromise; the
+window is short and single-use. Tests: `RefreshTokenTests.lostResponse_*`, `theGraceIsOneExtraUse_*`, `noGraceAfterLogout`.

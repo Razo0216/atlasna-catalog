@@ -98,6 +98,8 @@ public class SecurityConfig {
                         // Phase 5: lots (receiving goods, expiry) and stock reports for the shop floor.
                         .requestMatchers("/api/admin/products/*/lots", "/api/admin/inventory/**").hasAnyRole("STAFF", "ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/media/uploads/**").permitAll()
+                        // Phase 6: the "assign driver" picker of the order board (id, name, phone of active drivers).
+                        .requestMatchers(HttpMethod.GET, "/api/admin/drivers").hasAnyRole("STAFF", "ADMIN")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         // Public delivery info; the customer's own cart, addresses and orders.
                         .requestMatchers(HttpMethod.GET, "/api/delivery/**").permitAll()
